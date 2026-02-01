@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>高33班成绩系统 - 管理后台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: 'Inter', system-ui, sans-serif; }
+    .card { box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06); }
+  </style>
+</head>
+<body class="bg-slate-100 min-h-screen">
+  <div id="app" class="p-6 max-w-6xl mx-auto">
+    <!-- 登录页 -->
+    <div id="login-page" class="flex flex-col items-center justify-center min-h-[70vh]">
+      <div class="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md card">
+        <h1 class="text-2xl font-bold text-slate-800 mb-2">🔐 管理后台登录</h1>
+        <p class="text-slate-500 text-sm mb-6">高33班六次联考成绩智能分析系统</p>
+        <form id="login-form" class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">管理员密码</label>
+            <input type="password" id="login-password" placeholder="请输入密码" 
+              class="w-full border border-slate-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" autocomplete="current-password">
+          </div>
+          <p id="login-error" class="text-red-500 text-sm hidden"></p>
+          <button type="submit" class="w-full bg-blue-600 text-white font-semibold py-2 rounded-lg hover:bg-blue-700 transition">登录</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- 主后台 -->
+    <div id="main-page" class="hidden">
+      <header class="flex justify-between items-center mb-8 pb-4 border-b border-slate-200">
+        <div class="flex items-center gap-4">
+          <h1 class="text-xl font-bold text-slate-800">📊 数据管理后台</h1>
+          <a href="index1.html" target="_blank" class="text-sm text-blue-600 hover:underline">查看分析页面 →</a>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="text-slate-500 text-sm">已登录</span>
+          <button id="btn-logout" class="text-sm text-slate-600 hover:text-red-600">退出</button>
+        </div>
+      </header>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- 侧边菜单 -->
+        <div class="lg:col-span-1 space-y-4">
+          <nav class="bg-white rounded-xl p-4 card space-y-1">
+            <button data-tab="students" class="tab-btn w-full text-left px-4 py-2 rounded-lg font-medium bg-blue-50 text-blue-700">👥 学生管理</button>
+            <button data-tab="cutoffs" class="tab-btn w-full text-left px-4 py-2 rounded-lg font-medium text-slate-600 hover:bg-slate-50">📐 分数线设置</button>
+            <button data-tab="import" class="tab-btn w-full text-left px-4 py-2 rounded-lg font-medium text-slate-600 hover:bg-slate-50">📤 批量导入</button>
+            <button data-tab="settings" class="tab-btn w-full text-left px-4 py-2 rounded-lg font-medium text-slate-600 hover:bg-slate-50">⚙️ 系统设置</button>
+          </nav>
+          <div class="bg-white rounded-xl p-4 card">
+            <p class="text-sm text-slate-500">学生总数</p>
+            <p id="student-count" class="text-2xl font-bold text-slate-800">0</p>
+          </div>
+        </div>
+
+        <!-- 内容区 -->
+        <div class="lg:col-span-2">
+          <!-- 学生管理 -->
+          <div id="tab-students" class="tab-content">
+            <div class="bg-white rounded-xl p-6 card">
+              <div class="flex justify-between items-center mb-4">
+                <h2 class="font-bold text-slate-800">学生列表</h2>
+                <button id="btn-add-student" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700">+ 添加学生</button>
+              </div>
+              <div class="overflow-x-auto max-h-96 overflow-y-auto">
+                <table class="w-full text-sm">
+                  <thead class="bg-slate-100 sticky top-0">
+                    <tr>
+                      <th class="px-4 py-2 text-left">学号</th>
+                      <th class="px-4 py-2 text-left">姓名</th>
+                      <th class="px-4 py-2 text-right">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="students-tbody" class="divide-y divide-slate-100"></tbody>
+                </table>
+              </div>
+              <p id="students-empty" class="text-slate-400 text-center py-8 hidden">暂无学生数据，请添加或导入</p>
+            </div>
+          </div>
+
+          <!-- 分数线设置 -->
+          <div id="tab-cutoffs" class="tab-content hidden">
+            <div class="bg-white rounded-xl p-6 card">
+              <h2 class="font-bold text-slate-800 mb-4">六次考试分数线</h2>
+              <p class="text-slate-500 text-sm mb-4">修改特控线、本科线后点击保存</p>
+              <div id="cutoffs-form" class="space-y-4"></div>
+              <button id="btn-save-cutoffs" class="mt-4 bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700">保存分数线</button>
+            </div>
+          </div>
+
+          <!-- 批量导入 -->
+          <div id="tab-import" class="tab-content hidden">
+            <div class="bg-white rounded-xl p-6 card">
+              <h2 class="font-bold text-slate-800 mb-4">Excel/CSV 批量导入</h2>
+              <p class="text-slate-500 text-sm mb-4">选择考试并上传对应成绩文件，支持合并到已有学生</p>
+              <div class="space-y-4">
+                <div>
+                  <label class="block text-sm font-medium text-slate-700 mb-2">选择考试</label>
+                  <select id="import-exam" class="border border-slate-300 rounded-lg px-4 py-2 w-full">
+                    <option value="0">① 8月联考</option>
+                    <option value="1">② 9月联考</option>
+                    <option value="2">③ 10月联考</option>
+                    <option value="3">④ 12月(1)联考</option>
+                    <option value="4">⑤ 12月(2)联考</option>
+                    <option value="5">⑥ 1月一模</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-slate-700 mb-2">上传文件</label>
+                  <input type="file" id="import-file" accept=".csv,.xls,.xlsx" class="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                </div>
+                <p class="text-xs text-slate-400">格式：姓名、学号、总分、班排/校排、各科分数（列顺序需与系统一致）</p>
+                <button id="btn-import" class="bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50" disabled>导入</button>
+                <p id="import-result" class="text-sm hidden"></p>
+              </div>
+            </div>
+          </div>
+
+          <!-- 系统设置 -->
+          <div id="tab-settings" class="tab-content hidden">
+            <div class="bg-white rounded-xl p-6 card">
+              <h2 class="font-bold text-slate-800 mb-4">修改管理员密码</h2>
+              <div class="space-y-4 max-w-sm">
+                <div>
+                  <label class="block text-sm font-medium text-slate-700 mb-1">新密码</label>
+                  <input type="password" id="new-password" class="w-full border border-slate-300 rounded-lg px-4 py-2" placeholder="至少4位">
+                </div>
+                <button id="btn-save-password" class="bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700">保存</button>
+                <p id="password-result" class="text-sm hidden"></p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 添加/编辑学生弹窗 -->
+  <div id="student-modal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 p-6">
+      <h3 id="student-modal-title" class="font-bold text-lg mb-4">添加学生</h3>
+      <form id="student-form" class="space-y-4">
+        <input type="hidden" id="student-edit-id">
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">学号 *</label>
+          <input type="text" id="student-id" class="w-full border border-slate-300 rounded-lg px-4 py-2" placeholder="如 230493" required>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">姓名 *</label>
+          <input type="text" id="student-name" class="w-full border border-slate-300 rounded-lg px-4 py-2" placeholder="学生姓名" required>
+        </div>
+        <div class="flex justify-end gap-2 pt-4">
+          <button type="button" id="student-modal-cancel" class="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">取消</button>
+          <button type="submit" class="px-6 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = '';
+    let token = localStorage.getItem('admin_token') || '';
+
+    const EXAM_NAMES = ['① 8月联考', '② 9月联考', '③ 10月联考', '④ 12月(1)联考', '⑤ 12月(2)联考', '⑥ 1月一模'];
+
+    async function api(url, opts = {}) {
+      const headers = { 'Content-Type': 'application/json', ...opts.headers };
+      if (token) headers['X-Admin-Token'] = token;
+      const res = await fetch(API_BASE + url, { ...opts, headers });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || '请求失败');
+      return data;
+    }
+
+    function showLogin() {
+      document.getElementById('login-page').classList.remove('hidden');
+      document.getElementById('main-page').classList.add('hidden');
+    }
+
+    function showMain() {
+      document.getElementById('login-page').classList.add('hidden');
+      document.getElementById('main-page').classList.remove('hidden');
+      loadData();
+    }
+
+    // 登录
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const password = document.getElementById('login-password').value;
+      const errEl = document.getElementById('login-error');
+      try {
+        const { token: t } = await api('/api/login', { method: 'POST', body: JSON.stringify({ password }) });
+        token = t;
+        localStorage.setItem('admin_token', token);
+        showMain();
+      } catch (err) {
+        errEl.textContent = err.message || '登录失败';
+        errEl.classList.remove('hidden');
+      }
+    });
+
+    // 退出
+    document.getElementById('btn-logout').addEventListener('click', () => {
+      token = '';
+      localStorage.removeItem('admin_token');
+      showLogin();
+    });
+
+    let students = [];
+    let cutoffs = [];
+
+    async function loadData() {
+      try {
+        const data = await api('/api/data');
+        students = data.students || [];
+        cutoffs = data.cutoffs || [];
+        renderStudents();
+        renderCutoffs();
+        document.getElementById('student-count').textContent = students.length;
+      } catch (err) {
+        if (err.message.includes('未授权')) showLogin();
+        else alert('加载失败: ' + err.message);
+      }
+    }
+
+    function renderStudents() {
+      const tbody = document.getElementById('students-tbody');
+      const empty = document.getElementById('students-empty');
+      if (students.length === 0) {
+        tbody.innerHTML = '';
+        empty.classList.remove('hidden');
+        return;
+      }
+      empty.classList.add('hidden');
+      tbody.innerHTML = students.map(s => `
+        <tr>
+          <td class="px-4 py-2 font-mono">${s.id}</td>
+          <td class="px-4 py-2">${s.name}</td>
+          <td class="px-4 py-2 text-right">
+            <button class="edit-student text-blue-600 hover:underline mr-2" data-id="${s.id}">编辑</button>
+            <button class="delete-student text-red-600 hover:underline" data-id="${s.id}">删除</button>
+          </td>
+        </tr>
+      `).join('');
+      tbody.querySelectorAll('.edit-student').forEach(btn => {
+        btn.onclick = () => openEditStudent(btn.dataset.id);
+      });
+      tbody.querySelectorAll('.delete-student').forEach(btn => {
+        btn.onclick = () => deleteStudent(btn.dataset.id);
+      });
+    }
+
+    function renderCutoffs() {
+      const container = document.getElementById('cutoffs-form');
+      container.innerHTML = cutoffs.map((c, i) => `
+        <div class="flex items-center gap-4 p-3 bg-slate-50 rounded-lg">
+          <span class="w-32 font-medium">${EXAM_NAMES[i]}</span>
+          <label>特控线 <input type="number" data-idx="${i}" data-field="special" value="${c.special}" class="w-20 border rounded px-2 py-1 ml-1"></label>
+          <label>本科线 <input type="number" data-idx="${i}" data-field="bachelor" value="${c.bachelor}" class="w-20 border rounded px-2 py-1 ml-1"></label>
+        </div>
+      `).join('');
+    }
+
+    // 学生弹窗
+    const modal = document.getElementById('student-modal');
+    function openAddStudent() {
+      document.getElementById('student-modal-title').textContent = '添加学生';
+      document.getElementById('student-edit-id').value = '';
+      document.getElementById('student-id').value = '';
+      document.getElementById('student-id').readOnly = false;
+      document.getElementById('student-name').value = '';
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function openEditStudent(id) {
+      const s = students.find(x => x.id === id);
+      if (!s) return;
+      document.getElementById('student-modal-title').textContent = '编辑学生';
+      document.getElementById('student-edit-id').value = id;
+      document.getElementById('student-id').value = s.id;
+      document.getElementById('student-id').readOnly = true;
+      document.getElementById('student-name').value = s.name;
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    document.getElementById('student-modal-cancel').onclick = () => {
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    };
+
+    document.getElementById('student-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const editId = document.getElementById('student-edit-id').value;
+      const payload = {
+        id: document.getElementById('student-id').value.trim(),
+        name: document.getElementById('student-name').value.trim()
+      };
+      try {
+        if (editId) {
+          await api(`/api/students/${editId}`, { method: 'PUT', body: JSON.stringify({ ...payload, scores: students.find(s => s.id === editId)?.scores }) });
+        } else {
+          await api('/api/students', { method: 'POST', body: JSON.stringify(payload) });
+        }
+        document.getElementById('student-modal-cancel').click();
+        loadData();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+
+    async function deleteStudent(id) {
+      if (!confirm('确定删除该学生？')) return;
+      try {
+        await api(`/api/students/${id}`, { method: 'DELETE' });
+        loadData();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    document.getElementById('btn-add-student').onclick = openAddStudent;
+
+    // 保存分数线
+    document.getElementById('btn-save-cutoffs').onclick = async () => {
+      const inputs = document.querySelectorAll('#cutoffs-form input');
+      const newCutoffs = [...cutoffs];
+      inputs.forEach(inp => {
+        const idx = parseInt(inp.dataset.idx);
+        const field = inp.dataset.field;
+        newCutoffs[idx] = { ...newCutoffs[idx], [field]: parseFloat(inp.value) || 0 };
+      });
+      try {
+        await api('/api/cutoffs', { method: 'PUT', body: JSON.stringify(newCutoffs) });
+        cutoffs = newCutoffs;
+        alert('保存成功');
+      } catch (err) {
+        alert(err.message);
+      }
+    };
+
+    // 导入
+    document.getElementById('import-file').addEventListener('change', (e) => {
+      document.getElementById('btn-import').disabled = !e.target.files.length;
+    });
+
+    document.getElementById('btn-import').onclick = async () => {
+      const file = document.getElementById('import-file').files[0];
+      const examIndex = document.getElementById('import-exam').value;
+      if (!file) { alert('请选择文件'); return; }
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('examIndex', examIndex);
+      try {
+        const res = await fetch(API_BASE + '/api/import', {
+          method: 'POST',
+          headers: { 'X-Admin-Token': token },
+          body: fd
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || '导入失败');
+        document.getElementById('import-result').textContent = `导入成功，当前共 ${data.count} 名学生`;
+        document.getElementById('import-result').classList.remove('hidden');
+        document.getElementById('import-result').classList.remove('text-red-500');
+        document.getElementById('import-result').classList.add('text-green-600');
+        document.getElementById('import-file').value = '';
+        document.getElementById('btn-import').disabled = true;
+        loadData();
+      } catch (err) {
+        document.getElementById('import-result').textContent = err.message;
+        document.getElementById('import-result').classList.remove('hidden');
+        document.getElementById('import-result').classList.add('text-red-500');
+      }
+    };
+
+    // 修改密码
+    document.getElementById('btn-save-password').onclick = async () => {
+      const newPassword = document.getElementById('new-password').value;
+      const resEl = document.getElementById('password-result');
+      if (!newPassword || newPassword.length < 4) {
+        resEl.textContent = '密码至少4位';
+        resEl.classList.add('text-red-500');
+        resEl.classList.remove('hidden');
+        return;
+      }
+      try {
+        await api('/api/password', { method: 'PUT', body: JSON.stringify({ newPassword }) });
+        resEl.textContent = '密码已修改';
+        resEl.classList.remove('text-red-500');
+        resEl.classList.add('text-green-600');
+        resEl.classList.remove('hidden');
+      } catch (err) {
+        resEl.textContent = err.message;
+        resEl.classList.add('text-red-500');
+        resEl.classList.remove('hidden');
+      }
+    };
+
+    // Tab 切换
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.onclick = () => {
+        document.querySelectorAll('.tab-btn').forEach(b => {
+          b.classList.remove('bg-blue-50', 'text-blue-700');
+          b.classList.add('text-slate-600');
+        });
+        btn.classList.add('bg-blue-50', 'text-blue-700');
+        btn.classList.remove('text-slate-600');
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+        document.getElementById('tab-' + btn.dataset.tab).classList.remove('hidden');
+      };
+    });
+
+    // 初始化
+    if (token) {
+      api('/api/data').then(() => showMain()).catch(() => showLogin());
+    }
+  </script>
+</body>
+</html>
