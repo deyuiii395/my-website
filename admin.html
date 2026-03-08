@@ -82,13 +82,38 @@
             </div>
           </div>
 
-          <!-- 分数线设置 -->
+          <!-- 分数线与考试时间线 -->
           <div id="tab-cutoffs" class="tab-content hidden">
             <div class="bg-white rounded-xl p-6 card">
-              <h2 class="font-bold text-slate-800 mb-4">六次考试分数线</h2>
-              <p class="text-slate-500 text-sm mb-4">修改特控线、本科线后点击保存</p>
+              <h2 class="font-bold text-slate-800 mb-2">考试时间线 & 分数线</h2>
+              <p class="text-slate-500 text-sm mb-4">按时间顺序管理每次考试的特控线 / 本科线，可新增考试。</p>
               <div id="cutoffs-form" class="space-y-4"></div>
               <button id="btn-save-cutoffs" class="mt-4 bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700">保存分数线</button>
+              <div class="mt-8 pt-4 border-t border-slate-200">
+                <h3 class="font-semibold text-slate-800 mb-3">新增考试</h3>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                  <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">考试名称 *</label>
+                    <input type="text" id="new-exam-name" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" placeholder="如：⑦ 3月二模">
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">考试日期</label>
+                    <input type="date" id="new-exam-date" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">特控线</label>
+                    <input type="number" id="new-exam-special" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" placeholder="如 450">
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">本科线</label>
+                    <input type="number" id="new-exam-bachelor" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" placeholder="如 400">
+                  </div>
+                </div>
+                <div class="mt-4 flex items-center gap-4">
+                  <button id="btn-add-exam" class="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700">+ 新增考试</button>
+                  <p id="add-exam-result" class="text-sm text-slate-500 hidden"></p>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -101,12 +126,7 @@
                 <div>
                   <label class="block text-sm font-medium text-slate-700 mb-2">选择考试</label>
                   <select id="import-exam" class="border border-slate-300 rounded-lg px-4 py-2 w-full">
-                    <option value="0">① 8月联考</option>
-                    <option value="1">② 9月联考</option>
-                    <option value="2">③ 10月联考</option>
-                    <option value="3">④ 12月(1)联考</option>
-                    <option value="4">⑤ 12月(2)联考</option>
-                    <option value="5">⑥ 1月一模</option>
+                    <option value="">加载中...</option>
                   </select>
                 </div>
                 <div>
@@ -212,14 +232,20 @@
 
     let students = [];
     let cutoffs = [];
+    let exams = [];
 
     async function loadData() {
       try {
         const data = await api('/api/data');
         students = data.students || [];
         cutoffs = data.cutoffs || [];
+        exams = data.exams || (cutoffs || []).map((_, i) => ({
+          id: `exam-${i + 1}`,
+          name: EXAM_NAMES[i] || `第${i + 1}次考试`
+        }));
         renderStudents();
         renderCutoffs();
+        renderImportOptions();
         document.getElementById('student-count').textContent = students.length;
       } catch (err) {
         if (err.message.includes('未授权')) showLogin();
@@ -256,13 +282,32 @@
 
     function renderCutoffs() {
       const container = document.getElementById('cutoffs-form');
-      container.innerHTML = cutoffs.map((c, i) => `
+      const items = (exams.length ? exams : cutoffs.map((_, i) => ({
+        id: `exam-${i + 1}`,
+        name: EXAM_NAMES[i] || `第${i + 1}次考试`
+      })));
+      container.innerHTML = items.map((exam, i) => {
+        const c = cutoffs[i] || { special: 0, bachelor: 0 };
+        return `
         <div class="flex items-center gap-4 p-3 bg-slate-50 rounded-lg">
-          <span class="w-32 font-medium">${EXAM_NAMES[i]}</span>
-          <label>特控线 <input type="number" data-idx="${i}" data-field="special" value="${c.special}" class="w-20 border rounded px-2 py-1 ml-1"></label>
-          <label>本科线 <input type="number" data-idx="${i}" data-field="bachelor" value="${c.bachelor}" class="w-20 border rounded px-2 py-1 ml-1"></label>
+          <span class="w-40 font-medium truncate" title="${exam.name}">${exam.name}</span>
+          <label>特控线 <input type="number" data-idx="${i}" data-field="special" value="${c.special}" class="w-24 border rounded px-2 py-1 ml-1"></label>
+          <label>本科线 <input type="number" data-idx="${i}" data-field="bachelor" value="${c.bachelor}" class="w-24 border rounded px-2 py-1 ml-1"></label>
         </div>
-      `).join('');
+      `;
+      }).join('');
+    }
+
+    function renderImportOptions() {
+      const select = document.getElementById('import-exam');
+      if (!select) return;
+      if (!exams || exams.length === 0) {
+        select.innerHTML = '<option value="">暂无考试，请先在“考试时间线”中新增</option>';
+        return;
+      }
+      select.innerHTML = exams.map((exam, idx) =>
+        `<option value="${idx}">${exam.name}</option>`
+      ).join('');
     }
 
     // 学生弹窗
@@ -333,7 +378,7 @@
       inputs.forEach(inp => {
         const idx = parseInt(inp.dataset.idx);
         const field = inp.dataset.field;
-        newCutoffs[idx] = { ...newCutoffs[idx], [field]: parseFloat(inp.value) || 0 };
+        newCutoffs[idx] = { ...(newCutoffs[idx] || {}), [field]: parseFloat(inp.value) || 0 };
       });
       try {
         await api('/api/cutoffs', { method: 'PUT', body: JSON.stringify(newCutoffs) });
@@ -341,6 +386,46 @@
         alert('保存成功');
       } catch (err) {
         alert(err.message);
+      }
+    };
+
+    // 新增考试
+    document.getElementById('btn-add-exam').onclick = async () => {
+      const name = document.getElementById('new-exam-name').value.trim();
+      const date = document.getElementById('new-exam-date').value;
+      const special = parseFloat(document.getElementById('new-exam-special').value) || 0;
+      const bachelor = parseFloat(document.getElementById('new-exam-bachelor').value) || 0;
+      const resEl = document.getElementById('add-exam-result');
+      if (!name) {
+        resEl.textContent = '请填写考试名称';
+        resEl.classList.remove('hidden');
+        resEl.classList.remove('text-green-600');
+        resEl.classList.add('text-red-500');
+        return;
+      }
+      try {
+        await api('/api/exams', {
+          method: 'POST',
+          body: JSON.stringify({
+            name,
+            date,
+            cutoffs: { special, bachelor }
+          })
+        });
+        resEl.textContent = '新增考试成功';
+        resEl.classList.remove('hidden');
+        resEl.classList.remove('text-red-500');
+        resEl.classList.add('text-green-600');
+        document.getElementById('new-exam-name').value = '';
+        document.getElementById('new-exam-date').value = '';
+        document.getElementById('new-exam-special').value = '';
+        document.getElementById('new-exam-bachelor').value = '';
+        loadData();
+      } catch (err) {
+        resEl.textContent = err.message || '新增考试失败';
+        resEl.classList.remove('hidden');
+        resEl.classList.add('text-red-500');
+        resEl.classList.remove('text-green-600');
       }
     };
 
