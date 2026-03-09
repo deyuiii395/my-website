@@ -138,9 +138,10 @@ function getDefaultCutoffs() {
   return getDefaultExams().map(e => e.cutoffs);
 }
 
-// 创建空白成绩结构
+// 创建空白成绩结构（长度以 data.exams 为准，无 exams 时用默认考试数）
 function emptyScores(examCount) {
-  const count = typeof examCount === 'number' && examCount > 0 ? examCount : 6;
+  const defaultCount = getDefaultExams().length;
+  const count = typeof examCount === 'number' && examCount > 0 ? examCount : defaultCount;
   return Array(count).fill(null).map((_, i) => ({
     examId: i,
     total: 0,
@@ -155,7 +156,8 @@ function emptyScores(examCount) {
 
 // 确保所有学生的 scores 数组长度与考试场次数一致
 function ensureStudentScoresLength(data, examCount) {
-  const count = typeof examCount === 'number' && examCount > 0 ? examCount : 6;
+  const defaultCount = (data.exams && data.exams.length) ? data.exams.length : getDefaultExams().length;
+  const count = typeof examCount === 'number' && examCount > 0 ? examCount : defaultCount;
   data.students = (data.students || []).map(s => {
     if (!Array.isArray(s.scores)) {
       return { ...s, scores: emptyScores(count) };
@@ -180,7 +182,8 @@ function ensureStudentScoresLength(data, examCount) {
 // 解析 Excel/CSV 行到学生数据
 function parseRows(rows, examIndex, examCount) {
   const studentMap = {};
-  const count = typeof examCount === 'number' && examCount > 0 ? examCount : 6;
+  const defaultCount = getDefaultExams().length;
+  const count = typeof examCount === 'number' && examCount > 0 ? examCount : defaultCount;
   rows.forEach(row => {
     if (!row[0] || String(row[0]).includes('姓名') || String(row[0]).includes('平均分')) return;
     const id = row[1] ? String(row[1]).trim() : '';
@@ -353,7 +356,7 @@ app.post('/api/students', authMiddleware, (req, res) => {
   if (data.students.some(s => s.id === student.id)) {
     return res.status(400).json({ error: '学号已存在' });
   }
-  const examCount = (data.exams && data.exams.length) || 6;
+  const examCount = (data.exams && data.exams.length) ? data.exams.length : getDefaultExams().length;
   const newStudent = {
     name: student.name,
     id: student.id,
@@ -412,7 +415,7 @@ app.put('/api/cutoffs', authMiddleware, (req, res) => {
 // 批量导入 (Excel/CSV)
 app.post('/api/import', authMiddleware, upload.single('file'), (req, res) => {
   const data = loadData();
-  const examCount = (data.exams && data.exams.length) || 6;
+  const examCount = (data.exams && data.exams.length) ? data.exams.length : getDefaultExams().length;
   const examIndex = parseInt(req.body.examIndex, 10);
   if (Number.isNaN(examIndex) || examIndex < 0 || examIndex >= examCount) {
     return res.status(400).json({ error: `考试索引 0-${examCount - 1}` });
@@ -468,7 +471,7 @@ app.put('/api/password', authMiddleware, (req, res) => {
 // 启动
 app.listen(PORT, () => {
   console.log(`\n🚀 服务已启动: http://localhost:${PORT}`);
-  console.log(`   前端页面: http://localhost:${PORT}/index1.html`);
+  console.log(`   前端页面: http://localhost:${PORT}/`);
   console.log(`   管理后台: http://localhost:${PORT}/admin.html`);
   console.log(`   默认管理员密码: admin123\n`);
 });

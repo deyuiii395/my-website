@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>高33班六次联考成绩智能分析系统 (V7.0 全功能版)</title>
+    <title>高33班联考成绩智能分析系统 (Data-Driven)</title>
     
     <!-- 核心库 CDN -->
     <script crossorigin src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
@@ -90,8 +90,9 @@
             { id: 4, name: "⑤ 12月(2)联考", defaultSpecial: 412, defaultBachelor: 365, defaultSubs: { 语文:82, 数学:82, 英语:82, 物理:55, 化学:55, 生物:55, 政治:55, 历史:55, 地理:55 } },
             { id: 5, name: "⑥ 1月一模", defaultSpecial: 446, defaultBachelor: 385, defaultSubs: { 语文:89, 数学:89, 英语:89, 物理:59, 化学:59, 生物:59, 政治:59, 历史:59, 地理:59 } },
         ];
-        // 运行时考试配置：默认使用 EXAM_CONFIG，加载后端 exams 后会覆盖
+        // 运行时考试配置：默认使用 EXAM_CONFIG，加载后端 exams 后会覆盖（Data-Driven，支持 n 次考试）
         let RUNTIME_EXAMS = EXAM_CONFIG;
+        const getLastExamIndex = () => Math.max(0, (RUNTIME_EXAMS && RUNTIME_EXAMS.length) ? RUNTIME_EXAMS.length - 1 : 5);
         const SUBJECTS = ['语文', '数学', '英语', '物理', '化学', '生物', '政治', '历史', '地理'];
         const COLORS = ["#ef4444", "#f97316", "#f59e0b", "#10b981", "#06b6d4", "#3b82f6", "#6366f1", "#8b5cf6", "#d946ef"];
         
@@ -196,7 +197,8 @@
         // --- Subject Analysis Component ---
         const SubjectAnalysis = ({ allStudents, cutoffs }) => {
             const [selectedSub, setSelectedSub] = useState('语文');
-            const [selectedExamId, setSelectedExamId] = useState(5);
+            const [selectedExamId, setSelectedExamId] = useState(() => getLastExamIndex());
+            useEffect(() => { setSelectedExamId(getLastExamIndex()); }, [cutoffs.length]);
             
             const analysisData = useMemo(() => {
                 const students = allStudents.filter(s => s.scores[selectedExamId]?.subjects[selectedSub] > 0);
@@ -359,7 +361,7 @@
                     <div className="bg-blue-50 p-4 rounded-xl border border-blue-200">
                         <h3 className="font-bold text-blue-800 mb-2">🤖 AI 学情简报</h3>
                         <p className="text-sm text-blue-800 leading-relaxed">
-                            本次{EXAM_CONFIG[selectedExamId].name}中，全班{selectedSub}学科平均分为 <span className="font-bold">{analysisData.avg}</span>。
+                            本次{(RUNTIME_EXAMS[selectedExamId] && RUNTIME_EXAMS[selectedExamId].name) || ''}中，全班{selectedSub}学科平均分为 <span className="font-bold">{analysisData.avg}</span>。
                             从分布来看，优秀率（得分率≥80%）达到了 <span className="font-bold">{(((analysisData.dist[3] + analysisData.dist[4]) / allStudents.length) * 100).toFixed(1)}%</span>，
                             尚有 <span className="font-bold">{analysisData.dist[0]}</span> 人未及格。
                             {analysisData.dist[0] > 5 ? "建议重点关注后进生的基础巩固。" : "整体基础较为扎实，可适当增加拔高训练。"}
@@ -372,7 +374,7 @@
         // --- Dashboard Components ---
         const Dashboard = ({ allStudents, cutoffs, onStudentClick }) => {
             const stats = useMemo(() => {
-                return EXAM_CONFIG.map((cfg, idx) => {
+                return RUNTIME_EXAMS.map((cfg, idx) => {
                     const students = allStudents.filter(s => s.scores[idx] && s.scores[idx].total > 0);
                     if (students.length === 0) return { name: cfg.name, avg: 0, specialCount: 0, bachelorCount: 0, subs: {} };
                     const totalSum = students.reduce((a, b) => a + b.scores[idx].total, 0);
@@ -381,14 +383,16 @@
                     let subSums = {}; let subCounts = {};
                     students.forEach(s => { Object.entries(s.scores[idx].subjects).forEach(([sub, score]) => { if(score > 0) { subSums[sub] = (subSums[sub] || 0) + score; subCounts[sub] = (subCounts[sub] || 0) + 1; } }); });
                     let subAvgs = {}; SUBJECTS.forEach(sub => { subAvgs[sub] = subCounts[sub] ? parseFloat((subSums[sub] / subCounts[sub]).toFixed(1)) : 0; });
-                    return { name: cfg.name.split(' ')[1], avg: parseFloat((totalSum / students.length).toFixed(1)), specialCount: specialList.length, bachelorCount: bachelorList.length, specialList: specialList.sort((a,b) => b.scores[idx].total - a.scores[idx].total), ...subAvgs };
+                    return { name: (cfg.name && cfg.name.split(' ')[1]) || cfg.name || `第${idx + 1}次`, avg: parseFloat((totalSum / students.length).toFixed(1)), specialCount: specialList.length, bachelorCount: bachelorList.length, specialList: specialList.sort((a,b) => b.scores[idx].total - a.scores[idx].total), ...subAvgs };
                 });
             }, [allStudents, cutoffs]);
             const latestStat = stats[stats.length - 1];
-            const bachelorList = allStudents.filter(s => s.scores[5].total >= cutoffs[5].bachelor).sort((a,b) => b.scores[5].total - a.scores[5].total);
+            const lastIdx = getLastExamIndex();
+            const prevIdx = Math.max(0, lastIdx - 1);
+            const bachelorList = allStudents.filter(s => s.scores[lastIdx]?.total >= cutoffs[lastIdx]?.bachelor).sort((a,b) => b.scores[lastIdx].total - a.scores[lastIdx].total);
             const progressOver30 = allStudents
-                .filter(s => s.scores[5]?.total > 0 && s.scores[4]?.total > 0)
-                .map(s => ({ ...s, progress: s.scores[5].total - s.scores[4].total }))
+                .filter(s => s.scores[lastIdx]?.total > 0 && s.scores[prevIdx]?.total > 0)
+                .map(s => ({ ...s, progress: s.scores[lastIdx].total - s.scores[prevIdx].total }))
                 .filter(s => s.progress > 30)
                 .sort((a, b) => b.progress - a.progress);
 
@@ -400,7 +404,7 @@
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="bg-white p-4 rounded-xl card-shadow"><h3 className="font-bold text-gray-800 mb-4 flex items-center"><Icons.Activity className="mr-2 text-green-600"/> 各科平均分走势</h3><div className="h-72"><ResponsiveContainer width="100%" height="100%"><LineChart data={stats}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="name" fontSize={12}/><YAxis domain={[0, 150]}/><Tooltip/><Legend wrapperStyle={{fontSize:'10px'}}/>{SUBJECTS.map((sub, i) => <Line key={sub} type="monotone" dataKey={sub} stroke={COLORS[i]} strokeWidth={2} dot={false}/>)}</LineChart></ResponsiveContainer></div></div>
-                        <div className="bg-white p-6 rounded-xl card-shadow flex flex-col"><div className="flex justify-between items-center mb-4 border-b pb-2"><h3 className="font-bold text-lg text-gray-800">🏆 最新光荣榜</h3><span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">特控: {cutoffs[5].special} | 本科: {cutoffs[5].bachelor}</span></div><div className="flex-1 overflow-y-auto"><div className="mb-4"><h4 className="font-bold text-purple-700 mb-2 flex items-center"><span className="w-2 h-2 rounded-full bg-purple-700 mr-2"></span>特控线 ({latestStat.specialList?.length || 0}人)</h4><div className="flex flex-wrap gap-2">{latestStat.specialList && latestStat.specialList.map((s, i) => <button key={i} onClick={() => onStudentClick(s)} className="px-3 py-2 bg-purple-50 text-purple-700 text-base font-bold rounded hover:bg-purple-100 transition">{s.name} <span>{s.scores[5].total}</span></button>)}</div></div><div><h4 className="font-bold text-blue-600 mb-2 flex items-center"><span className="w-2 h-2 rounded-full bg-blue-600 mr-2"></span>本科线 ({bachelorList.length}人)</h4><div className="flex flex-wrap gap-2">{bachelorList.map((s, i) => <button key={i} onClick={() => onStudentClick(s)} className="px-3 py-2 bg-blue-50 text-blue-600 text-base font-bold rounded hover:bg-blue-100 transition">{s.name} <span>{s.scores[5].total}</span></button>)}</div></div><div className="mt-4"><h4 className="font-bold text-green-600 mb-2 flex items-center"><span className="w-2 h-2 rounded-full bg-green-600 mr-2"></span>分数进步超过30分 ({progressOver30.length}人)</h4><div className="flex flex-wrap gap-2">{progressOver30.map((s, i) => <button key={i} onClick={() => onStudentClick(s)} className="px-3 py-2 bg-green-50 text-green-700 text-base font-bold rounded hover:bg-green-100 transition">{s.name}（{s.progress}分）</button>)}</div></div></div></div>
+                        <div className="bg-white p-6 rounded-xl card-shadow flex flex-col"><div className="flex justify-between items-center mb-4 border-b pb-2"><h3 className="font-bold text-lg text-gray-800">🏆 最新光荣榜</h3><span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">特控: {cutoffs[lastIdx]?.special} | 本科: {cutoffs[lastIdx]?.bachelor}</span></div><div className="flex-1 overflow-y-auto"><div className="mb-4"><h4 className="font-bold text-purple-700 mb-2 flex items-center"><span className="w-2 h-2 rounded-full bg-purple-700 mr-2"></span>特控线 ({latestStat.specialList?.length || 0}人)</h4><div className="flex flex-wrap gap-2">{latestStat.specialList && latestStat.specialList.map((s, i) => <button key={i} onClick={() => onStudentClick(s)} className="px-3 py-2 bg-purple-50 text-purple-700 text-base font-bold rounded hover:bg-purple-100 transition">{s.name} <span>{s.scores[lastIdx]?.total}</span></button>)}</div></div><div><h4 className="font-bold text-blue-600 mb-2 flex items-center"><span className="w-2 h-2 rounded-full bg-blue-600 mr-2"></span>本科线 ({bachelorList.length}人)</h4><div className="flex flex-wrap gap-2">{bachelorList.map((s, i) => <button key={i} onClick={() => onStudentClick(s)} className="px-3 py-2 bg-blue-50 text-blue-600 text-base font-bold rounded hover:bg-blue-100 transition">{s.name} <span>{s.scores[lastIdx]?.total}</span></button>)}</div></div><div className="mt-4"><h4 className="font-bold text-green-600 mb-2 flex items-center"><span className="w-2 h-2 rounded-full bg-green-600 mr-2"></span>分数进步超过30分 ({progressOver30.length}人)</h4><div className="flex flex-wrap gap-2">{progressOver30.map((s, i) => <button key={i} onClick={() => onStudentClick(s)} className="px-3 py-2 bg-green-50 text-green-700 text-base font-bold rounded hover:bg-green-100 transition">{s.name}（{s.progress}分）</button>)}</div></div></div></div>
                     </div>
                 </div>
             );
@@ -408,8 +412,9 @@
 
         // --- Leaderboard ---
         const Leaderboard = ({ allStudents, cutoffs, onStudentClick }) => {
-            const [selectedExamId, setSelectedExamId] = useState(5);
+            const [selectedExamId, setSelectedExamId] = useState(() => getLastExamIndex());
             const [searchTerm, setSearchTerm] = useState("");
+            useEffect(() => { setSelectedExamId(getLastExamIndex()); }, [cutoffs.length]);
             const sortedStudents = useMemo(() => {
                 let list = allStudents.filter(s => s.scores[selectedExamId]?.total > 0);
                 if (searchTerm) list = list.filter(s => s.name.includes(searchTerm) || s.id.includes(searchTerm));
@@ -436,8 +441,8 @@
                         </div>
 
                         <div className="flex gap-2 overflow-x-auto pb-2 md:pb-0">
-                            {EXAM_CONFIG.slice().reverse().map((exam, i) => { 
-                                const realIdx = EXAM_CONFIG.length - 1 - i; 
+{RUNTIME_EXAMS.slice().reverse().map((exam, i) => {
+                                const realIdx = RUNTIME_EXAMS.length - 1 - i;
                                 return <button key={realIdx} onClick={() => setSelectedExamId(realIdx)} className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition ${selectedExamId === realIdx ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-600 border hover:bg-gray-100'}`}>{exam.name.split(' ')[1]}</button>; 
                             })}
                         </div>
@@ -486,7 +491,7 @@
         // PAGE 1
         const ReportPage = ({ student, cutoffs, allStudents }) => {
             const analysis = useMemo(() => generateDetailedAnalysis(student, cutoffs, allStudents), [student, cutoffs, allStudents]);
-            const chartData = student.scores.map((s, i) => ({ name: EXAM_CONFIG[i].name.replace(/[①-⑥]/g, '').replace('联考',''), total: s.total }));
+            const chartData = student.scores.map((s, i) => ({ name: (RUNTIME_EXAMS[i] && RUNTIME_EXAMS[i].name) ? RUNTIME_EXAMS[i].name.replace(/[①-⑥]/g, '').replace('联考','') : `第${i + 1}次`, total: s.total }));
             const chartYDomain = useMemo(() => {
                 const vals = chartData.map(d => d.total).filter(v => v != null && v > 0);
                 if (vals.length === 0) return ['auto', 'auto'];
@@ -497,8 +502,8 @@
             return (
                 <div className="print-page print-page-1">
                     <div className="border-b-2 border-black pb-2 mb-2 text-center"><h1 className="text-2xl font-extrabold tracking-widest text-black">2026届高33班学生学情分析报告</h1><p className="text-xs mt-1 text-gray-700 font-bold">生成日期：{new Date().toLocaleDateString()} &nbsp;|&nbsp; 班级：高33班</p></div>
-                    <div className="mb-2 border border-black p-2 rounded-sm bg-gray-50"><h3 className="font-extrabold border-l-4 border-black pl-2 mb-1 text-base">一、学生基本信息</h3><div className="flex justify-between items-end px-2"><div><span className="text-gray-600 text-xs font-bold">姓名</span><p className="text-lg font-extrabold">{student.name}</p></div><div><span className="text-gray-600 text-xs font-bold">学号</span><p className="text-base font-bold font-mono">{student.id}</p></div><div><span className="text-gray-600 text-xs font-bold">最新总分</span><p className="text-lg font-extrabold text-blue-800">{student.scores[5]?.total || '-'}</p></div><div><span className="text-gray-600 text-xs font-bold">班排</span><p className="text-lg font-extrabold">{student.scores[5]?.rank || '-'}</p></div><div><span className="text-gray-600 text-xs font-bold">年级排名</span><p className="text-lg font-extrabold">{student.scores[5]?.gradeRank || '-'}</p></div></div></div>
-                    <div className="mb-2"><h3 className="font-extrabold border-l-4 border-black pl-2 mb-1 text-base">二、六次联考成绩全景表</h3><table className="w-full text-xs text-center border-collapse border border-black"><thead className="bg-gray-200 font-extrabold text-black"><tr><th className="border border-black p-1">考试名称</th><th className="border border-black p-1 bg-blue-100">总分</th><th className="border border-black p-1">班排</th><th className="border border-black p-1">校排</th><th className="border border-black p-1 text-purple-900">特控线</th><th className="border border-black p-1 text-blue-900">本科线</th>{SUBJECTS.map(s => <th key={s} className="border border-black p-1">{s}</th>)}</tr></thead><tbody>{student.scores.map((s, idx) => <tr key={idx} className="font-bold"><td className="border border-black p-1">{EXAM_CONFIG[idx].name}</td><td className="border border-black p-1 bg-blue-50 font-extrabold">{s.total || '-'}</td><td className="border border-black p-1">{s.rank || '-'}</td><td className="border border-black p-1">{s.gradeRank || '-'}</td><td className="border border-black p-1 text-purple-900">{cutoffs[idx].special}</td><td className="border border-black p-1 text-blue-900">{cutoffs[idx].bachelor}</td>{SUBJECTS.map(sub => <td key={sub} className="border border-black p-1">{s.subjects[sub] || '-'}</td>)}</tr>)}</tbody></table></div>
+                    <div className="mb-2 border border-black p-2 rounded-sm bg-gray-50"><h3 className="font-extrabold border-l-4 border-black pl-2 mb-1 text-base">一、学生基本信息</h3><div className="flex justify-between items-end px-2"><div><span className="text-gray-600 text-xs font-bold">姓名</span><p className="text-lg font-extrabold">{student.name}</p></div><div><span className="text-gray-600 text-xs font-bold">学号</span><p className="text-base font-bold font-mono">{student.id}</p></div><div><span className="text-gray-600 text-xs font-bold">最新总分</span><p className="text-lg font-extrabold text-blue-800">{student.scores[getLastExamIndex()]?.total || '-'}</p></div><div><span className="text-gray-600 text-xs font-bold">班排</span><p className="text-lg font-extrabold">{student.scores[getLastExamIndex()]?.rank || '-'}</p></div><div><span className="text-gray-600 text-xs font-bold">年级排名</span><p className="text-lg font-extrabold">{student.scores[getLastExamIndex()]?.gradeRank || '-'}</p></div></div></div>
+                    <div className="mb-2"><h3 className="font-extrabold border-l-4 border-black pl-2 mb-1 text-base">二、联考成绩全景表</h3><table className="w-full text-xs text-center border-collapse border border-black"><thead className="bg-gray-200 font-extrabold text-black"><tr><th className="border border-black p-1">考试名称</th><th className="border border-black p-1 bg-blue-100">总分</th><th className="border border-black p-1">班排</th><th className="border border-black p-1">校排</th><th className="border border-black p-1 text-purple-900">特控线</th><th className="border border-black p-1 text-blue-900">本科线</th>{SUBJECTS.map(s => <th key={s} className="border border-black p-1">{s}</th>)}</tr></thead><tbody>{student.scores.map((s, idx) => <tr key={idx} className="font-bold"><td className="border border-black p-1">{RUNTIME_EXAMS[idx]?.name || `第${idx + 1}次`}</td><td className="border border-black p-1 bg-blue-50 font-extrabold">{s.total || '-'}</td><td className="border border-black p-1">{s.rank || '-'}</td><td className="border border-black p-1">{s.gradeRank || '-'}</td><td className="border border-black p-1 text-purple-900">{cutoffs[idx]?.special ?? '-'}</td><td className="border border-black p-1 text-blue-900">{cutoffs[idx]?.bachelor ?? '-'}</td>{SUBJECTS.map(sub => <td key={sub} className="border border-black p-1">{s.subjects[sub] || '-'}</td>)}</tr>)}</tbody></table></div>
                     {/* Chart (FIXED PIXEL SIZE FOR PRINT SAFETY) */}
                     <div className="mb-2 border border-gray-400 p-2"><h4 className="text-center font-extrabold text-sm mb-1">三、总分走势图</h4><div style={{height: "180px", overflow: "hidden"}}><ResponsiveContainer width="100%" height="100%"><LineChart data={chartData} margin={{ top: 32, right: 28, bottom: 20, left: 28 }}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="name" fontSize={10} interval={0} tick={{fontWeight:'bold'}} padding={{ left: 24, right: 24 }} /><YAxis domain={chartYDomain} fontSize={10} tick={{fontWeight:'bold'}} width={28}/><Line type="monotone" dataKey="total" stroke="#000" strokeWidth={2} dot={{r:3}} isAnimationActive={false}><LabelList dataKey="total" position="top" style={{fontSize:'10px', fontWeight:'bold'}}/></Line></LineChart></ResponsiveContainer></div></div>
                     <div className="flex-1 border border-black p-3 rounded-sm"><h3 className="font-extrabold border-l-4 border-black pl-2 mb-1 text-base">四、智能诊断与备考建议</h3><div className="text-xs leading-relaxed space-y-2 text-justify font-bold text-gray-900"><p><strong>【学情综述】：</strong>{analysis.progress}</p><p><strong>【归因分析】：</strong>{analysis.subjectAnalysis}</p>{analysis.subjectAdviceList && analysis.subjectAdviceList.length > 0 && <div className="mt-2"><strong>【科目建议】：</strong><ul className="list-none pl-0 mt-1 space-y-1">{analysis.subjectAdviceList.map((item, i) => <li key={i}><span className="font-extrabold">{item.subject}</span>（{item.level}）：{item.suggestion}</li>)}</ul></div>}<div className="mt-2"><strong>【行动指南】：</strong><ul className="list-decimal pl-5 mt-1 space-y-1">{analysis.advice.map((a, i) => <li key={i}>{a}</li>)}</ul></div></div></div>
@@ -528,7 +533,7 @@
         // --- 前端学情报告（模块化布局，不包含五、六）---
         const StudentReportScreen = ({ student, cutoffs, allStudents, onBack }) => {
             const analysis = useMemo(() => generateDetailedAnalysis(student, cutoffs, allStudents), [student, cutoffs, allStudents]);
-            const chartData = student.scores.map((s, i) => ({ name: EXAM_CONFIG[i].name.replace(/[①-⑥]/g, '').replace('联考',''), total: s.total }));
+            const chartData = student.scores.map((s, i) => ({ name: (RUNTIME_EXAMS[i] && RUNTIME_EXAMS[i].name) ? RUNTIME_EXAMS[i].name.replace(/[①-⑥]/g, '').replace('联考','') : `第${i + 1}次`, total: s.total }));
             const chartYDomain = useMemo(() => {
                 const vals = chartData.map(d => d.total).filter(v => v != null && v > 0);
                 if (vals.length === 0) return ['auto', 'auto'];
@@ -539,9 +544,9 @@
             const basicItems = [
                 { label: '姓名', value: student.name },
                 { label: '学号', value: student.id },
-                { label: '最新总分', value: student.scores[5]?.total ?? '-', highlight: true },
-                { label: '班排', value: student.scores[5]?.rank ?? '-' },
-                { label: '年级排名', value: student.scores[5]?.gradeRank ?? '-' },
+                { label: '最新总分', value: student.scores[getLastExamIndex()]?.total ?? '-', highlight: true },
+                { label: '班排', value: student.scores[getLastExamIndex()]?.rank ?? '-' },
+                { label: '年级排名', value: student.scores[getLastExamIndex()]?.gradeRank ?? '-' },
             ];
             return (
                 <div className="min-h-screen bg-slate-50">
@@ -576,13 +581,13 @@
 
                         <section className="bg-white rounded-2xl shadow-md border border-slate-200/80 overflow-hidden">
                             <div className="px-6 py-4 border-b bg-slate-50">
-                                <h2 className="text-lg font-bold text-slate-800 flex items-center"><span className="w-1 h-6 bg-blue-500 rounded-full mr-3"/>二、六次联考成绩全景表</h2>
+                                <h2 className="text-lg font-bold text-slate-800 flex items-center"><span className="w-1 h-6 bg-blue-500 rounded-full mr-3"/>二、联考成绩全景表</h2>
                             </div>
                             <div className="p-4 overflow-x-auto">
                                 <table className="w-full text-sm text-center border-collapse">
                                     <thead><tr className="bg-slate-100 text-slate-700 font-bold"><th className="border border-slate-200 py-3 px-2">考试名称</th><th className="border border-slate-200 py-3 px-2 bg-blue-50">总分</th><th className="border border-slate-200 py-3 px-2">班排</th><th className="border border-slate-200 py-3 px-2">校排</th><th className="border border-slate-200 py-3 px-2 text-purple-700">特控线</th><th className="border border-slate-200 py-3 px-2 text-blue-700">本科线</th>{SUBJECTS.map(s => <th key={s} className="border border-slate-200 py-3 px-2">{s}</th>)}</tr></thead>
                                     <tbody>
-                                        {student.scores.map((s, idx) => <tr key={idx} className="font-medium text-slate-800"><td className="border border-slate-200 py-2 px-2">{EXAM_CONFIG[idx].name}</td><td className="border border-slate-200 py-2 px-2 bg-blue-50/50 font-bold">{s.total || '-'}</td><td className="border border-slate-200 py-2 px-2">{s.rank || '-'}</td><td className="border border-slate-200 py-2 px-2">{s.gradeRank || '-'}</td><td className="border border-slate-200 py-2 px-2 text-purple-600">{cutoffs[idx].special}</td><td className="border border-slate-200 py-2 px-2 text-blue-600">{cutoffs[idx].bachelor}</td>{SUBJECTS.map(sub => <td key={sub} className="border border-slate-200 py-2 px-2">{s.subjects[sub] ?? '-'}</td>)}</tr>)}
+                                        {student.scores.map((s, idx) => <tr key={idx} className="font-medium text-slate-800"><td className="border border-slate-200 py-2 px-2">{RUNTIME_EXAMS[idx]?.name || `第${idx + 1}次`}</td><td className="border border-slate-200 py-2 px-2 bg-blue-50/50 font-bold">{s.total || '-'}</td><td className="border border-slate-200 py-2 px-2">{s.rank || '-'}</td><td className="border border-slate-200 py-2 px-2">{s.gradeRank || '-'}</td><td className="border border-slate-200 py-2 px-2 text-purple-600">{cutoffs[idx].special}</td><td className="border border-slate-200 py-2 px-2 text-blue-600">{cutoffs[idx].bachelor}</td>{SUBJECTS.map(sub => <td key={sub} className="border border-slate-200 py-2 px-2">{s.subjects[sub] ?? '-'}</td>)}</tr>)}
                                     </tbody>
                                 </table>
                             </div>
@@ -648,17 +653,17 @@
         const DataUploadModal = ({ isOpen, onClose, onDataUpdate, initialCutoffs }) => {
             if (!isOpen) return null;
             const [cutoffs, setCutoffs] = useState(initialCutoffs);
-            const [files, setFiles] = useState(Array(6).fill(null));
+            const [files, setFiles] = useState(() => Array((initialCutoffs && initialCutoffs.length) ? initialCutoffs.length : 6).fill(null));
             const [expandedExamId, setExpandedExamId] = useState(null);
             const handleCutoffChange = (index, field, value) => { const newCutoffs = [...cutoffs]; newCutoffs[index] = { ...newCutoffs[index], [field]: Number(value) }; setCutoffs(newCutoffs); };
-            const handleSubjectLineChange = (examIndex, subject, value) => { const newCutoffs = [...cutoffs]; if (!newCutoffs[examIndex].subjects) newCutoffs[examIndex].subjects = { ...EXAM_CONFIG[examIndex].defaultSubs }; newCutoffs[examIndex].subjects[subject] = Number(value); setCutoffs(newCutoffs); };
+            const handleSubjectLineChange = (examIndex, subject, value) => { const newCutoffs = [...cutoffs]; if (!newCutoffs[examIndex].subjects) newCutoffs[examIndex].subjects = { ...(RUNTIME_EXAMS[examIndex]?.defaultSubs || {}) }; newCutoffs[examIndex].subjects[subject] = Number(value); setCutoffs(newCutoffs); };
             const handleFileChange = (index, e) => { const newFiles = [...files]; newFiles[index] = e.target.files[0]; setFiles(newFiles); };
             const parseAndMerge = (studentMap, rows, index) => { 
                 rows.forEach(row => { 
                     if (!row[0] || row[0].toString().includes('姓名') || row[0].toString().includes('平均分')) return; 
                     const id = row[1] ? row[1].toString().trim() : ""; 
                     if(!id) return; 
-                    if (!studentMap[id]) studentMap[id] = { name: row[0], id: id, scores: Array(6).fill(null).map((_, i) => ({ examId: i, total: 0, rank: 0, gradeRank: 0, subjects: {} })) }; 
+                    if (!studentMap[id]) studentMap[id] = { name: row[0], id: id, scores: Array(cutoffs.length).fill(null).map((_, i) => ({ examId: i, total: 0, rank: 0, gradeRank: 0, subjects: {} })) }; 
                     const rankStr = row[3] ? row[3].toString() : "0/0";
                     const rankParts = rankStr.split('/');
                     const classRank = parseInt(rankParts[0]) || 0;
@@ -669,11 +674,11 @@
             const processFiles = () => { const studentMap = {}; let processedCount = 0; let activeFiles = files.map((f, i) => ({file: f, index: i})).filter(item => item.file); if (activeFiles.length === 0) { onDataUpdate(null, cutoffs); onClose(); return; } activeFiles.forEach(({file, index}) => { if (file.name.endsWith('.xls') || file.name.endsWith('.xlsx')) { const reader = new FileReader(); reader.onload = (e) => { const workbook = XLSX.read(new Uint8Array(e.target.result), {type: 'array'}); const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], {header: 1}); parseAndMerge(studentMap, rows, index); processedCount++; if (processedCount === activeFiles.length) { onDataUpdate(Object.values(studentMap), cutoffs); onClose(); } }; reader.readAsArrayBuffer(file); } else { Papa.parse(file, { header: false, complete: (res) => { parseAndMerge(studentMap, res.data, index); processedCount++; if (processedCount === activeFiles.length) { onDataUpdate(Object.values(studentMap), cutoffs); onClose(); } } }); } }); };
             return (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 overflow-y-auto">
-                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl p-6 my-10"><div className="flex justify-between items-center mb-6 border-b pb-4"><h2 className="text-2xl font-bold text-gray-800">📊 数据导入与参数设置</h2><button onClick={onClose} className="text-gray-500 hover:text-gray-700">✕</button></div><div className="grid grid-cols-12 gap-4 text-sm font-bold bg-gray-100 p-3 rounded mb-2"><div className="col-span-2">考试名称</div><div className="col-span-2">特控线 (一本)</div><div className="col-span-2">本科线 (二本)</div><div className="col-span-4">对应数据文件 (CSV/XLS/XLSX)</div><div className="col-span-2 text-center">高级设置</div></div><div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">{EXAM_CONFIG.map((exam, idx) => (<div key={exam.id} className="border-b pb-2"><div className="grid grid-cols-12 gap-4 items-center"><div className="col-span-2 text-gray-700 font-medium truncate" title={exam.name}>{exam.name}</div><div className="col-span-2"><input type="number" value={cutoffs[idx].special} onChange={(e) => handleCutoffChange(idx, 'special', e.target.value)} className="w-full border rounded px-2 py-1 focus:ring-2 focus:ring-blue-500"/></div><div className="col-span-2"><input type="number" value={cutoffs[idx].bachelor} onChange={(e) => handleCutoffChange(idx, 'bachelor', e.target.value)} className="w-full border rounded px-2 py-1 focus:ring-2 focus:ring-blue-500"/></div><div className="col-span-4"><input type="file" accept=".csv,.xls,.xlsx" onChange={(e) => handleFileChange(idx, e)} className="w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/></div><div className="col-span-2 text-center"><button onClick={() => setExpandedExamId(expandedExamId === idx ? null : idx)} className={`text-xs px-3 py-1 rounded border transition ${expandedExamId === idx ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}><Icons.Settings size={12} className="inline mr-1"/>{expandedExamId === idx ? '收起' : '各科线'}</button></div></div>{expandedExamId === idx && (<div className="mt-3 bg-blue-50 p-3 rounded-lg grid grid-cols-3 md:grid-cols-5 gap-3 animate-fade-in"><div className="col-span-full text-xs text-blue-600 font-bold mb-1">设置 {exam.name} 的各科有效分：</div>{SUBJECTS.map(sub => (<div key={sub} className="flex items-center"><label className="text-xs text-gray-600 mr-2 w-8">{sub}</label><input type="number" value={(cutoffs[idx].subjects || EXAM_CONFIG[idx].defaultSubs)[sub]} onChange={(e) => handleSubjectLineChange(idx, sub, e.target.value)} className="w-16 border rounded px-1 text-sm focus:ring-1 focus:ring-blue-500"/></div>))}</div>)}</div>))}</div><div className="mt-8 flex justify-end gap-4 border-t pt-4"><button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">取消</button><button onClick={processFiles} className="px-6 py-2 bg-blue-600 text-white font-bold rounded hover:bg-blue-700 shadow-lg flex items-center"><Icons.Check size={18} className="mr-2"/> 确认处理</button></div></div></div>
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl p-6 my-10"><div className="flex justify-between items-center mb-6 border-b pb-4"><h2 className="text-2xl font-bold text-gray-800">📊 数据导入与参数设置</h2><button onClick={onClose} className="text-gray-500 hover:text-gray-700">✕</button></div><div className="grid grid-cols-12 gap-4 text-sm font-bold bg-gray-100 p-3 rounded mb-2"><div className="col-span-2">考试名称</div><div className="col-span-2">特控线 (一本)</div><div className="col-span-2">本科线 (二本)</div><div className="col-span-4">对应数据文件 (CSV/XLS/XLSX)</div><div className="col-span-2 text-center">高级设置</div></div><div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">{RUNTIME_EXAMS.map((exam, idx) => (<div key={exam.id != null ? exam.id : idx} className="border-b pb-2"><div className="grid grid-cols-12 gap-4 items-center"><div className="col-span-2 text-gray-700 font-medium truncate" title={exam.name}>{exam.name}</div><div className="col-span-2"><input type="number" value={cutoffs[idx].special} onChange={(e) => handleCutoffChange(idx, 'special', e.target.value)} className="w-full border rounded px-2 py-1 focus:ring-2 focus:ring-blue-500"/></div><div className="col-span-2"><input type="number" value={cutoffs[idx].bachelor} onChange={(e) => handleCutoffChange(idx, 'bachelor', e.target.value)} className="w-full border rounded px-2 py-1 focus:ring-2 focus:ring-blue-500"/></div><div className="col-span-4"><input type="file" accept=".csv,.xls,.xlsx" onChange={(e) => handleFileChange(idx, e)} className="w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/></div><div className="col-span-2 text-center"><button onClick={() => setExpandedExamId(expandedExamId === idx ? null : idx)} className={`text-xs px-3 py-1 rounded border transition ${expandedExamId === idx ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}><Icons.Settings size={12} className="inline mr-1"/>{expandedExamId === idx ? '收起' : '各科线'}</button></div></div>{expandedExamId === idx && (<div className="mt-3 bg-blue-50 p-3 rounded-lg grid grid-cols-3 md:grid-cols-5 gap-3 animate-fade-in"><div className="col-span-full text-xs text-blue-600 font-bold mb-1">设置 {exam.name} 的各科有效分：</div>{SUBJECTS.map(sub => (<div key={sub} className="flex items-center"><label className="text-xs text-gray-600 mr-2 w-8">{sub}</label><input type="number" value={(cutoffs[idx].subjects || RUNTIME_EXAMS[idx]?.defaultSubs || {})[sub]} onChange={(e) => handleSubjectLineChange(idx, sub, e.target.value)} className="w-16 border rounded px-1 text-sm focus:ring-1 focus:ring-blue-500"/></div>))}</div>)}</div>))}</div><div className="mt-8 flex justify-end gap-4 border-t pt-4"><button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">取消</button><button onClick={processFiles} className="px-6 py-2 bg-blue-600 text-white font-bold rounded hover:bg-blue-700 shadow-lg flex items-center"><Icons.Check size={18} className="mr-2"/> 确认处理</button></div></div></div>
             );
         };
 
-        const defaultCutoffs = () => EXAM_CONFIG.map(e => ({ special: e.defaultSpecial, bachelor: e.defaultBachelor, subjects: { ...e.defaultSubs } }));
+        const defaultCutoffs = () => RUNTIME_EXAMS.map(e => ({ special: e.defaultSpecial, bachelor: e.defaultBachelor, subjects: { ...(e.defaultSubs || {}) } }));
 
         const App = () => {
             const [students, setStudents] = useState(DEMO_STUDENTS);
@@ -686,7 +691,16 @@
 
             useEffect(() => {
                 fetch('/api/data').then(r => r.ok ? r.json() : Promise.reject()).then(data => {
-                    if (data.students && data.students.length >= 0 && data.cutoffs && data.cutoffs.length === 6) {
+                    if (data.students && data.students.length >= 0 && data.cutoffs && data.cutoffs.length > 0) {
+                        if (data.exams && data.exams.length) {
+                            RUNTIME_EXAMS = data.exams.map((e, i) => ({
+                                id: e.id != null ? e.id : i,
+                                name: e.name || `第${i + 1}次考试`,
+                                defaultSpecial: (e.cutoffs && e.cutoffs.special != null) ? e.cutoffs.special : (EXAM_CONFIG[i]?.defaultSpecial ?? 0),
+                                defaultBachelor: (e.cutoffs && e.cutoffs.bachelor != null) ? e.cutoffs.bachelor : (EXAM_CONFIG[i]?.defaultBachelor ?? 0),
+                                defaultSubs: (e.cutoffs && e.cutoffs.subjects) ? e.cutoffs.subjects : (EXAM_CONFIG[i]?.defaultSubs || {})
+                            }));
+                        }
                         setStudents(data.students);
                         setCutoffs(data.cutoffs);
                         setDataSource('api');
