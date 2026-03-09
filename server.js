@@ -90,7 +90,7 @@ function loadData() {
     const raw = fs.readFileSync(DATA_FILE, 'utf8');
     const data = JSON.parse(raw);
 
-    // 兼容旧版本：如果还没有 exams，就用默认 exams + 旧 cutoffs 填充
+    // 兼容旧版本：如果还没有 exams，就用默认 exams + 旧 cutoffs 填充，并写回文件以便后续持久化
     if (!data.exams || !Array.isArray(data.exams) || data.exams.length === 0) {
       const defaults = getDefaultExams();
       if (Array.isArray(data.cutoffs) && data.cutoffs.length === defaults.length) {
@@ -108,6 +108,11 @@ function loadData() {
         });
       }
       data.exams = defaults;
+      // 迁移后必须写回文件，否则下次 loadData 仍会读到无 exams 的数据
+      data.cutoffs = data.exams.map(e => e.cutoffs);
+      ensureStudentScoresLength(data, data.exams.length);
+      saveData(data);
+      return data;
     }
 
     // 确保 cutoffs 和 exams 同步（保留原 cutoffs 字段兼容前端）

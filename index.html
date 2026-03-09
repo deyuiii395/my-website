@@ -266,7 +266,7 @@
                         <div className="flex gap-2">
                              {RUNTIME_EXAMS.slice().reverse().map((exam, i) => { 
                                 const realIdx = RUNTIME_EXAMS.length - 1 - i; 
-                                return <button key={realIdx} onClick={() => setSelectedExamId(realIdx)} className={`px-3 py-1 rounded text-xs ${selectedExamId === realIdx ? 'bg-blue-100 text-blue-700 border border-blue-300' : 'bg-white border text-gray-500'}`}>{exam.name.split(' ')[1]}</button>; 
+                                return <button key={realIdx} onClick={() => setSelectedExamId(realIdx)} className={`px-3 py-1 rounded text-xs ${selectedExamId === realIdx ? 'bg-blue-100 text-blue-700 border border-blue-300' : 'bg-white border text-gray-500'}`}>{(exam.name && (exam.name.split(' ')[1] || exam.name)) || `第${realIdx + 1}次`}</button>; 
                             })}
                         </div>
                     </div>
@@ -443,7 +443,7 @@
                         <div className="flex gap-2 overflow-x-auto pb-2 md:pb-0">
 {RUNTIME_EXAMS.slice().reverse().map((exam, i) => {
                                 const realIdx = RUNTIME_EXAMS.length - 1 - i;
-                                return <button key={realIdx} onClick={() => setSelectedExamId(realIdx)} className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition ${selectedExamId === realIdx ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-600 border hover:bg-gray-100'}`}>{exam.name.split(' ')[1]}</button>; 
+                                return <button key={realIdx} onClick={() => setSelectedExamId(realIdx)} className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition ${selectedExamId === realIdx ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-600 border hover:bg-gray-100'}`}>{(exam.name && (exam.name.split(' ')[1] || exam.name)) || `第${realIdx + 1}次`}</button>; 
                             })}
                         </div>
                     </div>
