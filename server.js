@@ -9,8 +9,23 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const SUBJECTS = ['语文', '数学', '英语', '物理', '化学', '生物', '政治', '历史', '地理'];
 
-// ===== MongoDB 连接 =====
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/gao33_score_system';
+// ===== MongoDB 连接 - 强制验证模式 =====
+// 严禁使用本地兜底逻辑，MONGODB_URI 必须由环境变量提供
+const MONGODB_URI = process.env.MONGODB_URI;
+
+if (!MONGODB_URI) {
+  console.error('❌ 致命错误: 环境变量 MONGODB_URI 未设置');
+  console.error('   请检查:');
+  console.error('   1. Render 的 Environment 配置中是否已添加 MONGODB_URI');
+  console.error('   2. 本地开发时，.env 文件中是否包含 MONGODB_URI');
+  console.error('   3. MongoDB 连接字符串格式是否正确');
+  console.error('');
+  console.error('   MongoDB 连接字符串示例:');
+  console.error('   - 本地: mongodb://localhost:27017/gao33_score_system');
+  console.error('   - MongoDB Atlas: mongodb+srv://user:password@cluster.mongodb.net/gao33_score_system');
+  console.error('   - Render: mongodb+srv://...@cluster.mongodb.net/...');
+  process.exit(1);
+}
 
 mongoose.connect(MONGODB_URI, {
   useNewUrlParser: true,
@@ -19,7 +34,8 @@ mongoose.connect(MONGODB_URI, {
   console.log('✅ MongoDB 连接成功');
   initializeDefaultExams();
 }).catch(err => {
-  console.error('❌ MongoDB 连接失败:', err);
+  console.error('❌ MongoDB 连接失败:', err.message);
+  console.error('   连接字符串:', MONGODB_URI.split('@')[0] + '@****');
   process.exit(1);
 });
 

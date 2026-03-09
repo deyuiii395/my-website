@@ -14,16 +14,30 @@
 - 🗑️ 删除 `DATA_FILE` 和本地 `data/store.json` 的读写逻辑
 - 🗑️ 删除 `loadData()` 和 `saveData()` 本地文件函数
 
-### 3. **MongoDB 连接与初始化**
+### 3. **MongoDB 连接与初始化 - 强制验证模式**
+
+⚠️ **关键安全改进**：连接代码采用强制验证，绝不允许本地兜底逻辑
+
 ```javascript
-// 使用环境变量（不硬编码密码）
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/gao33_score_system';
+// ✅ 正确做法: 强制要求环境变量存在
+const MONGODB_URI = process.env.MONGODB_URI;
+
+if (!MONGODB_URI) {
+  console.error('❌ 致命错误: 环境变量 MONGODB_URI 未设置');
+  process.exit(1);  // 立即终止，防止连接到本地 MongoDB
+}
 
 mongoose.connect(MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true
 })
 ```
+
+**为什么这很重要**:
+- ❌ **绝对禁止**: `|| 'mongodb://localhost:27017/...'` 后备逻辑
+- ❌ **后果**: 在生产环境缺少 MONGODB_URI 时，会错误地连接到本地 MongoDB（在 Render 上实际上是独立的容器环境）
+- ✅ **正确做法**: 环境变量不存在时立即失败，强制配置正确的数据库连接
+
 
 ### 4. **Mongoose 数据模型**
 
@@ -129,11 +143,18 @@ npm start
    - Build Command: `npm install`
    - Start Command: `npm start`
 
-3. 设置环境变量：
-   - Key: `MONGODB_URI`
-   - Value: 你的 MongoDB 连接字符串（包含完整凭证）
-   - Key: `PORT`
-   - Value: `10000` (Render 默认)
+3. **⚠️ 必须设置环境变量**（应用启动前必须存在）：
+   
+   | 变量名 | 值 | 说明 |
+   |--------|------|------|
+   | **MONGODB_URI** | `你的 MongoDB 连接字符串` | **必须设置**，否则应用无法启动 |
+   | PORT | `10000` | 可选（Render 默认值） |
+   
+   **MONGODB_URI 设置示例**:
+   - Render MongoDB: `mongodb+srv://user:pass@render-....mongodb.net/gao33_score_system`
+   - MongoDB Atlas: `mongodb+srv://user:pass@cluster.mongodb.net/gao33_score_system`
+   
+   ⚠️ **重要**: 如果 MONGODB_URI 未设置，应用会立即失败并打印详细错误消息，防止误连到本地数据库。
 
 4. 部署！
 
@@ -152,11 +173,17 @@ curl https://your-app.onrender.com/api/data
 
 ## 🔒 安全注意事项
 
-1. **永远不要在代码中硬编码 MongoDB 凭证**
+1. **MongoDB 连接强制验证**
+   - ✅ 代码强制要求 `MONGODB_URI` 环境变量存在
+   - ✅ 如果变量缺失，应用会立即退出并打印错误信息
+   - ❌ **绝对禁止**使用本地后备逻辑 (`|| 'mongodb://localhost:...'`)
+   - 防止在生产环境意外连接到本地或错误的数据库
+
+2. **永远不要在代码中硬编码 MongoDB 凭证**
    - ✅ 使用 `process.env.MONGODB_URI`
    - ❌ 避免: `mongodb+srv://user:password@...`
 
-2. **环境变量设置**
+3. **环境变量设置**
    - 在 Render: 使用 Web Service 的 Environment 配置
    - 本地开发: 创建 `.env` 文件（添加到 .gitignore）
 
