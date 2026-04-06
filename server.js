@@ -401,6 +401,93 @@ app.put('/api/exams/:examId', authMiddleware, async (req, res) => {
   }
 });
 
+// 删除考试
+app.delete('/api/exams/:examId', authMiddleware, async (req, res) => {
+  try {
+    const { examId } = req.params;
+    const exam = await Exam.findOne({ id: examId });
+    if (!exam) return res.status(404).json({ error: '考试不存在' });
+
+    // 获取要删除的考试的examId (数字)
+    const deleteExamIndex = parseInt(examId.split('-')[1]) - 1;
+
+    // 删除考试
+    await Exam.deleteOne({ id: examId });
+
+    // 获取剩余考试，按id排序
+    const remainingExams = await Exam.find({}).sort({ id: 1 });
+
+    // 重新编号考试id
+    for (let i = 0; i < remainingExams.length; i++) {
+      const newId = `exam-${i + 1}`;
+      if (remainingExams[i].id !== newId) {
+        await Exam.updateOne({ _id: remainingExams[i]._id }, { id: newId });
+      }
+    }
+
+    // 更新所有学生的scores数组
+    const students = await Student.find({});
+    for (const student of students) {
+      // 删除对应考试的成绩
+      student.scores.splice(deleteExamIndex, 1);
+      // 重新设置examId
+      student.scores.forEach((score, index) => {
+        score.examId = index;
+      });
+      await student.save();
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: '删除考试失败' });
+  }
+});
+
+// 删除重复考试（同名最新创建的）
+app.delete('/api/exams/duplicates/:examName', authMiddleware, async (req, res) => {
+  try {
+    const { examName } = req.params;
+    const exams = await Exam.find({ name: examName }).sort({ id: -1 }); // 按id降序，最新创建的在前
+    if (exams.length <= 1) {
+      return res.status(400).json({ error: '没有重复考试' });
+    }
+
+    // 删除最新创建的（id最大的）
+    const examToDelete = exams[0];
+    const deleteExamIndex = parseInt(examToDelete.id.split('-')[1]) - 1;
+
+    // 删除考试
+    await Exam.deleteOne({ _id: examToDelete._id });
+
+    // 获取剩余考试，按id排序
+    const remainingExams = await Exam.find({}).sort({ id: 1 });
+
+    // 重新编号考试id
+    for (let i = 0; i < remainingExams.length; i++) {
+      const newId = `exam-${i + 1}`;
+      if (remainingExams[i].id !== newId) {
+        await Exam.updateOne({ _id: remainingExams[i]._id }, { id: newId });
+      }
+    }
+
+    // 更新所有学生的scores数组
+    const students = await Student.find({});
+    for (const student of students) {
+      // 删除对应考试的成绩
+      student.scores.splice(deleteExamIndex, 1);
+      // 重新设置examId
+      student.scores.forEach((score, index) => {
+        score.examId = index;
+      });
+      await student.save();
+    }
+
+    res.json({ ok: true, deletedExam: examToDelete.name });
+  } catch (err) {
+    res.status(500).json({ error: '删除重复考试失败' });
+  }
+});
+
 // 获取学生列表
 app.get('/api/students', authMiddleware, async (req, res) => {
   try {
