@@ -124,77 +124,208 @@
             历史: { weak: "夯实时空与阶段特征，材料题练审题与史论结合；建议梳理通史与专题。", normal: "巩固史料解读与小论文；加强选择题易错点归纳。", strong: "可深化史料题与小论文；注意表述严谨与时间分配。" },
             地理: { weak: "强化读图与区域认知，自然与人文原理回归教材；建议建立区域与模板。", normal: "巩固综合题与图表题；加强因果链与术语表述。", strong: "可突破综合题与开放题；注意图表信息提取完整。" },
         };
+        const median = (arr) => {
+            if (!arr || arr.length === 0) return 0;
+            const sorted = [...arr].sort((a, b) => a - b);
+            const mid = Math.floor(sorted.length / 2);
+            return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+        };
+        const mad = (arr, med) => median((arr || []).map(v => Math.abs(v - med)));
+        const avg = (arr) => arr && arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+        const std = (arr, mean) => {
+            if (!arr || arr.length === 0) return 0;
+            const base = mean != null ? mean : avg(arr);
+            return Math.sqrt(arr.reduce((sum, v) => sum + Math.pow(v - base, 2), 0) / arr.length);
+        };
+        const formatSigned = (n) => (n >= 0 ? `+${n.toFixed(1)}` : `${n.toFixed(1)}`);
+        const percentileRank = (arr, val) => {
+            if (!arr || arr.length === 0) return 0;
+            const lessOrEq = arr.filter(v => v <= val).length;
+            return Math.round((lessOrEq / arr.length) * 100);
+        };
+
         const generateDetailedAnalysis = (student, cutoffs, allStudents) => {
-            if (!student || student.scores.every(s => s.total === 0)) return { progress: "数据不足", subjectAnalysis: "数据不足", subjectAdviceList: [], advice: ["请补充完整数据"] };
-            const validScores = student.scores.filter(s => s.total > 0);
-            const latest = validScores[validScores.length - 1];
-            const examIdx = latest.examId;
-            const currentCutoff = cutoffs[examIdx];
-
-            let gapAnalysis = "";
-            let gapSpecial = latest.total - currentCutoff.special;
-            let gapBachelor = latest.total - currentCutoff.bachelor;
-            if (gapSpecial >= 0) gapAnalysis = `超特控线 ${gapSpecial.toFixed(1)} 分`;
-            else if (gapBachelor >= 0) gapAnalysis = `超本科线 ${gapBachelor.toFixed(1)} 分，距特控线差 ${Math.abs(gapSpecial).toFixed(1)} 分`;
-            else gapAnalysis = `距本科线差 ${Math.abs(gapBachelor).toFixed(1)} 分`;
-
-            let progressText = `最新总分 ${latest.total} (${gapAnalysis})。`;
-            const classScores = allStudents.map(s => s.scores[examIdx]?.total || 0).filter(t => t > 0);
-            const classAvgTotal = classScores.length ? classScores.reduce((a,b)=>a+b,0)/classScores.length : 0;
-            progressText += latest.total > classAvgTotal ? ` 高于班均 ${(latest.total - classAvgTotal).toFixed(1)} 分。` : ` 低于班均 ${(classAvgTotal - latest.total).toFixed(1)} 分。`;
-
-            // 归因分析：按科目计算班均、标准差，找出薄弱/优势科目
-            const weakList = [];
-            const strongList = [];
-            const subjectStats = [];
-            SUBJECTS.forEach(sub => {
-                const myScore = latest.subjects[sub];
-                if (myScore === undefined || myScore <= 0) return;
-                const classScoresSub = allStudents.map(s => s.scores[examIdx]?.subjects[sub]).filter(v => v !== undefined && v > 0);
-                if (classScoresSub.length === 0) return;
-                const mean = classScoresSub.reduce((a, b) => a + b, 0) / classScoresSub.length;
-                const variance = classScoresSub.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / classScoresSub.length;
-                const std = Math.sqrt(variance) || 1;
-                const diff = myScore - mean;
-                subjectStats.push({ sub, myScore, mean, std, diff });
-                if (diff <= -0.3 * std) weakList.push({ sub, diff, mean, std });
-                else if (diff >= 0.3 * std) strongList.push({ sub, diff, mean, std });
-            });
-            let attributionText = "";
-            if (weakList.length > 0) {
-                const weakNames = weakList.map(w => `【${w.sub}】`).join("、");
-                const weakDetail = weakList.map(w => `${w.sub}低于班均${(Math.abs(w.diff)).toFixed(1)}分`).join("，");
-                attributionText = `与班级均分、标准差对比，${weakNames}为当前薄弱科目（${weakDetail}）。`;
-            } else attributionText = "与班级均分、标准差对比，暂无明显薄弱科目。";
-            if (strongList.length > 0) {
-                const strongNames = strongList.map(s => `【${s.sub}】`).join("、");
-                attributionText += `${strongNames}表现优于班均，可保持并争取稳定发挥。`;
+            if (!student || student.scores.every(s => s.total === 0)) {
+                return {
+                    portrait: "数据不足",
+                    trend: "数据不足",
+                    trendRaw: "",
+                    outlierNotes: [],
+                    anomalyNotes: [],
+                    subjectRows: [],
+                    subjectAdviceList: [],
+                    actionPlan: [{ title: "补齐数据", detail: "至少补全近 6 次考试后再生成稳定诊断。", ratio: 100 }]
+                };
             }
 
-            // 科目建议：按薄弱/一般/优势取对应建议
-            const subjectAdviceList = [];
-            SUBJECTS.forEach(sub => {
-                const myScore = latest.subjects[sub];
-                if (myScore === undefined || myScore <= 0) return;
-                const tip = SUBJECT_ADVICE_MAP[sub];
-                if (!tip) return;
-                const classScoresSub = allStudents.map(s => s.scores[examIdx]?.subjects[sub]).filter(v => v !== undefined && v > 0);
-                const mean = classScoresSub.length ? classScoresSub.reduce((a,b)=>a+b,0)/classScoresSub.length : 0;
-                const variance = classScoresSub.length ? classScoresSub.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / classScoresSub.length : 0;
-                const std = Math.sqrt(variance) || 1;
-                const diff = myScore - mean;
-                let level, levelLabel;
-                if (diff <= -0.3 * std) { level = "weak"; levelLabel = "薄弱"; }
-                else if (diff >= 0.3 * std) { level = "strong"; levelLabel = "优势"; }
-                else { level = "normal"; levelLabel = "一般"; }
-                subjectAdviceList.push({ subject: sub, level: levelLabel, suggestion: tip[level] });
+            const validScoreEntries = student.scores
+                .map((s, i) => ({ ...s, examIdx: i }))
+                .filter(s => s.total > 0);
+            const latest = validScoreEntries[validScoreEntries.length - 1];
+            const latestIdx = latest.examIdx;
+            const prev = validScoreEntries.length > 1 ? validScoreEntries[validScoreEntries.length - 2] : null;
+            const currentCutoff = cutoffs[latestIdx] || { special: 0, bachelor: 0 };
+            const totalSeries = validScoreEntries.map(s => s.total);
+
+            const classTotalsLatest = allStudents.map(s => s.scores[latestIdx]?.total || 0).filter(v => v > 0);
+            const classAvgTotal = avg(classTotalsLatest);
+            const gapSpecial = latest.total - (currentCutoff.special || 0);
+            const gapBachelor = latest.total - (currentCutoff.bachelor || 0);
+            const totalMedian = median(totalSeries);
+            const totalMax = Math.max(...totalSeries);
+            const totalMin = Math.min(...totalSeries);
+            const totalPercentile = percentileRank(totalSeries, latest.total);
+            const highLowTag = latest.total === totalMax ? "（创个人新高）" : (latest.total === totalMin ? "（创个人新低）" : "");
+
+            const contribution = prev ? SUBJECTS.map(sub => {
+                const curr = latest.subjects[sub] || 0;
+                const old = prev.subjects[sub] || 0;
+                return { sub, diff: curr - old };
+            }).sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff)).slice(0, 2) : [];
+            const contributionText = contribution.length
+                ? contribution.map(c => `${c.sub}${formatSigned(c.diff)}分`).join("，")
+                : "暂无可对比的上次数据";
+
+            const portrait = `本次总分 ${latest.total.toFixed(1)}；较本科线${formatSigned(gapBachelor)} 分，较特控线${formatSigned(gapSpecial)} 分；较班均${formatSigned(latest.total - classAvgTotal)} 分。个人历史最高 ${totalMax.toFixed(1)}、最低 ${totalMin.toFixed(1)}、中位数 ${totalMedian.toFixed(1)}，本次位于个人历史 P${totalPercentile}${highLowTag}。较上次总分${prev ? formatSigned(latest.total - prev.total) : "暂无对比"}，主要由 ${contributionText} 贡献。`;
+
+            const recent3 = totalSeries.slice(-3);
+            const prev3 = totalSeries.slice(-6, -3);
+            const delta = (recent3.length === 3 && prev3.length === 3) ? (avg(recent3) - avg(prev3)) : 0;
+            const trendTag = delta >= 15 ? "上升" : (delta <= -15 ? "下滑" : "平稳");
+            const trend = (recent3.length === 3 && prev3.length === 3)
+                ? `按“最近3次均值 - 前3次均值”计算，Δ=${delta.toFixed(1)}，趋势判定为【${trendTag}】。`
+                : "有效总分不足 6 次，暂不做 3+3 稳健趋势判定。";
+            const trendRaw = (recent3.length === 3 && prev3.length === 3)
+                ? `前3次：${prev3.map(v => v.toFixed(1)).join(" / ")}；最近3次：${recent3.map(v => v.toFixed(1)).join(" / ")}。`
+                : "";
+
+            const outlierNotes = [];
+            const totalMed = median(totalSeries);
+            validScoreEntries.forEach(s => {
+                const diff = s.total - totalMed;
+                if (Math.abs(diff) >= 40) {
+                    const examName = RUNTIME_EXAMS[s.examIdx]?.name || `第${s.examIdx + 1}次`;
+                    outlierNotes.push(`${examName} 总分 ${s.total.toFixed(1)}，相对个人中位数 ${totalMed.toFixed(1)} 偏离 ${formatSigned(diff)} 分（${diff > 0 ? "正向离群值" : "负向离群值"}）。`);
+                }
             });
 
-            let advice = ["保持考感：严格按照高考时间进行全真模拟训练。"];
-            if (latest.total < currentCutoff.bachelor) advice.unshift("基础为王：建议回归教材，强化基本概念和公式的记忆。");
-            else advice.unshift("重点突破：分析中档题失分原因，争取突破更高分数线。");
+            const anomalyNotes = [];
+            SUBJECTS.forEach(sub => {
+                const vals = student.scores.map(s => s.subjects[sub]).filter(v => v != null && v > 0);
+                if (vals.length < 5) return;
+                const med = median(vals);
+                const madVal = mad(vals, med);
+                const threshold = Math.max(15, 2.5 * madVal);
+                student.scores.forEach((s, idx) => {
+                    const x = s.subjects[sub];
+                    if (!x || x <= 0) return;
+                    const d = x - med;
+                    if (Math.abs(d) >= threshold) {
+                        const examName = RUNTIME_EXAMS[idx]?.name || `第${idx + 1}次`;
+                        anomalyNotes.push(`${examName} ${sub} 出现异常波动（偏离个人中位数 ${formatSigned(d)} 分），建议排查原因。`);
+                    }
+                });
+            });
 
-            return { progress: progressText, subjectAnalysis: attributionText, subjectAdviceList, advice };
+            const subjectRows = SUBJECTS.map(sub => {
+                const latestVal = latest.subjects[sub] || 0;
+                const hist = student.scores.map(s => s.subjects[sub]).filter(v => v != null && v > 0);
+                if (hist.length === 0) return null;
+                const med = median(hist);
+                const madVal = mad(hist, med);
+                const min = Math.min(...hist);
+                const max = Math.max(...hist);
+                const classVals = allStudents.map(s => s.scores[latestIdx]?.subjects[sub]).filter(v => v != null && v > 0);
+                const classMean = avg(classVals);
+                const classGap = latestVal - classMean;
+                const subjectThreshold = Math.max(15, 2.5 * madVal);
+                const personalOutlier = Math.abs(latestVal - med) >= subjectThreshold;
+                const longTermWeak = med < classMean - 3;
+
+                let judgement = "状态基本正常，保持节奏";
+                if (!personalOutlier && longTermWeak) judgement = "个人常态，班级层面偏弱";
+                if (personalOutlier && longTermWeak && latestVal < med) judgement = "本次+长期双重薄弱，优先级高";
+                if (personalOutlier && !longTermWeak && latestVal < med) judgement = "本次略失常，非长期问题";
+                if (!personalOutlier && latestVal >= med && longTermWeak) judgement = "本次发挥好，但绝对分仍低";
+
+                return {
+                    subject: sub,
+                    latest: latestVal,
+                    histMedian: med,
+                    histMin: min,
+                    histMax: max,
+                    classMean,
+                    classGap,
+                    personalOutlier,
+                    longTermWeak,
+                    judgement,
+                    historyText: `${latestVal >= med ? "偏上" : "偏下"}（中位 ${med.toFixed(1)}，极差 ${min.toFixed(1)}-${max.toFixed(1)}）`,
+                    classText: `${classGap >= 0 ? "高于" : "低于"}班均 ${Math.abs(classGap).toFixed(1)} 分`,
+                    historySeries: hist
+                };
+            }).filter(Boolean);
+
+            const subjectAdviceList = subjectRows.map(row => {
+                const values = row.historySeries;
+                const m = avg(values);
+                const s = std(values, m);
+                const cv = m > 0 ? s / m : 0;
+                const madVal = mad(values, row.histMedian);
+                const stable = cv <= 0.12 && madVal <= 6;
+                const highMean = row.histMedian >= row.classMean;
+                const latestDev = row.latest - row.histMedian;
+                const outlierNow = Math.abs(latestDev) >= Math.max(15, 2.5 * madVal);
+                const seqText = values.map(v => v.toFixed(1)).join(" / ");
+                let branch = "C";
+                let suggestion = "";
+
+                if (outlierNow && latestDev < 0 && !row.longTermWeak) {
+                    branch = "E";
+                    suggestion = `${row.subject}本次较中位数 ${row.histMedian.toFixed(1)} 下滑 ${Math.abs(latestDev).toFixed(1)} 分，但历史序列 ${seqText} 显示长期不弱。建议优先做本次试卷“错因复盘清单”：按审题/计算/时间分配分类，3天内完成二次订正，无需立即开启大规模专项训练。`;
+                } else if (outlierNow && latestDev > 0 && row.longTermWeak) {
+                    branch = "F";
+                    suggestion = `${row.subject}本次高于个人中位数 ${latestDev.toFixed(1)} 分，但9次序列 ${seqText} 的长期中位仅 ${row.histMedian.toFixed(1)}。建议把这次高分拆成可复制动作（题型顺序、时间分配、压轴取舍），连续3次按同策略执行，避免“一次超常后松劲”。`;
+                } else if (highMean && stable) {
+                    branch = "A";
+                    suggestion = `${row.subject}9次成绩 ${seqText}，中位 ${row.histMedian.toFixed(1)}，波动可控（CV ${(cv * 100).toFixed(1)}%）。当前是优势稳定科，建议每周保留2次限时套题，重点冲刺高区间失分点，作为总分提档亮点。`;
+                } else if (highMean && !stable) {
+                    branch = "B";
+                    suggestion = `${row.subject}9次成绩 ${seqText}，中位 ${row.histMedian.toFixed(1)}，但波动偏大（CV ${(cv * 100).toFixed(1)}%，MAD ${madVal.toFixed(1)}）。这是“稳定性问题”而非“水平问题”，建议优先对低分场次做同题型重练+考场流程复盘，先稳住下限。`;
+                } else if (!highMean && stable) {
+                    branch = "C";
+                    suggestion = `${row.subject}9次成绩 ${seqText}，中位 ${row.histMedian.toFixed(1)} 且波动相对稳定。建议执行“基础提分配额”：每周学习时间中固定投入约35%，围绕高频基础题和必得分模块连续4周滚动提升。`;
+                } else {
+                    branch = "D";
+                    suggestion = `${row.subject}9次成绩 ${seqText}，中位 ${row.histMedian.toFixed(1)}，波动较大（CV ${(cv * 100).toFixed(1)}%）。建议先定位失分类型占比（知识盲点/计算失误/时间不足），按占比最高项先治理，再做针对性训练，避免盲目刷题。`;
+                }
+
+                const priorityScore = Math.max(0, row.classMean - row.latest) + (row.personalOutlier ? 6 : 0) + (row.longTermWeak ? 8 : 0);
+                return {
+                    subject: row.subject,
+                    branch,
+                    priorityScore,
+                    suggestion,
+                    dataLine: `本次 ${row.latest.toFixed(1)}，中位 ${row.histMedian.toFixed(1)}，范围 ${row.histMin.toFixed(1)}-${row.histMax.toFixed(1)}。`
+                };
+            }).sort((a, b) => b.priorityScore - a.priorityScore);
+
+            const topActions = subjectAdviceList.slice(0, 3);
+            const totalWeight = topActions.reduce((sum, x) => sum + (x.priorityScore || 1), 0) || 1;
+            const actionPlan = topActions.map((item, i) => {
+                const ratio = i === topActions.length - 1
+                    ? 100 - topActions.slice(0, i).reduce((sum, x) => sum + Math.round(((x.priorityScore || 1) / totalWeight) * 100), 0)
+                    : Math.round(((item.priorityScore || 1) / totalWeight) * 100);
+                const actionText = item.branch === "B"
+                    ? "稳定性训练优先：精做+复盘，不做无目的刷量。"
+                    : (item.branch === "E"
+                        ? "聚焦本次错题订正，短周期闭环验证。"
+                        : (item.branch === "C" || item.branch === "D"
+                            ? "基础模块拆分推进，按周验收。"
+                            : "维持优势并冲刺高价值题型。"));
+                return { title: `${item.subject} 优先级 ${i + 1}`, detail: actionText, ratio: Math.max(10, ratio) };
+            });
+
+            return { portrait, trend, trendRaw, outlierNotes, anomalyNotes, subjectRows, subjectAdviceList, actionPlan };
         };
 
         // --- Subject Analysis Component ---
@@ -494,7 +625,18 @@
         // PAGE 1
         const ReportPage = ({ student, cutoffs, allStudents }) => {
             const analysis = useMemo(() => generateDetailedAnalysis(student, cutoffs, allStudents), [student, cutoffs, allStudents]);
-            const chartData = student.scores.map((s, i) => ({ name: (RUNTIME_EXAMS[i] && RUNTIME_EXAMS[i].name) ? RUNTIME_EXAMS[i].name.replace(/[①-⑥]/g, '').replace('联考','') : `第${i + 1}次`, total: s.total }));
+            const chartData = student.scores.map((s, i) => {
+                const prevTotal = i > 0 ? (student.scores[i - 1]?.total || 0) : null;
+                const drop = prevTotal != null ? s.total - prevTotal : 0;
+                const examCutoff = cutoffs[i] || { special: 0, bachelor: 0 };
+                const passTag = s.total >= examCutoff.special ? "特控↑" : (s.total >= examCutoff.bachelor ? "本科↑" : "");
+                return {
+                    name: (RUNTIME_EXAMS[i] && RUNTIME_EXAMS[i].name) ? RUNTIME_EXAMS[i].name.replace(/[①-⑥]/g, '').replace('联考','') : `第${i + 1}次`,
+                    total: s.total,
+                    passTag,
+                    dropTag: drop <= -40 ? `${drop.toFixed(1)}分` : ""
+                };
+            });
             const examCount = student.scores.length;
             const isCompactPrint = examCount >= 8;
             const chartYDomain = useMemo(() => {
@@ -512,8 +654,8 @@
                     <div className={`${isCompactPrint ? 'mb-1 p-1.5' : 'mb-2 p-2'} border border-black rounded-sm bg-gray-50`}><h3 className="font-extrabold border-l-4 border-black pl-2 mb-1 text-base">一、学生基本信息</h3><div className="flex justify-between items-end px-2"><div><span className="text-gray-600 text-xs font-bold">姓名</span><p className={`${isCompactPrint ? 'text-base' : 'text-lg'} font-extrabold`}>{student.name}</p></div><div><span className="text-gray-600 text-xs font-bold">学号</span><p className="text-base font-bold font-mono">{student.id}</p></div><div><span className="text-gray-600 text-xs font-bold">最新总分</span><p className={`${isCompactPrint ? 'text-base' : 'text-lg'} font-extrabold text-blue-800`}>{student.scores[getLastExamIndex()]?.total || '-'}</p></div><div><span className="text-gray-600 text-xs font-bold">班排</span><p className={`${isCompactPrint ? 'text-base' : 'text-lg'} font-extrabold`}>{student.scores[getLastExamIndex()]?.rank || '-'}</p></div><div><span className="text-gray-600 text-xs font-bold">年级排名</span><p className={`${isCompactPrint ? 'text-base' : 'text-lg'} font-extrabold`}>{student.scores[getLastExamIndex()]?.gradeRank || '-'}</p></div></div></div>
                     <div className={`${isCompactPrint ? 'mb-1' : 'mb-2'}`}><h3 className="font-extrabold border-l-4 border-black pl-2 mb-1 text-base">二、联考成绩全景表</h3><table className={`w-full text-center border-collapse border border-black ${isCompactPrint ? 'text-[10px]' : 'text-xs'}`}><thead className="bg-gray-200 font-extrabold text-black"><tr><th className={`border border-black ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>考试名称</th><th className={`border border-black bg-blue-100 ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>总分</th><th className={`border border-black ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>班排</th><th className={`border border-black ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>校排</th><th className={`border border-black text-purple-900 ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>特控线</th><th className={`border border-black text-blue-900 ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>本科线</th>{SUBJECTS.map(s => <th key={s} className={`border border-black ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>{s}</th>)}</tr></thead><tbody>{student.scores.map((s, idx) => <tr key={idx} className="font-bold"><td className={`border border-black ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>{RUNTIME_EXAMS[idx]?.name || `第${idx + 1}次`}</td><td className={`border border-black bg-blue-50 font-extrabold ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>{s.total || '-'}</td><td className={`border border-black ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>{s.rank || '-'}</td><td className={`border border-black ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>{s.gradeRank || '-'}</td><td className={`border border-black text-purple-900 ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>{cutoffs[idx]?.special ?? '-'}</td><td className={`border border-black text-blue-900 ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>{cutoffs[idx]?.bachelor ?? '-'}</td>{SUBJECTS.map(sub => <td key={sub} className={`border border-black ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>{s.subjects[sub] || '-'}</td>)}</tr>)}</tbody></table></div>
                     {/* Chart (FIXED PIXEL SIZE FOR PRINT SAFETY) */}
-                    <div className={`${isCompactPrint ? 'mb-1 p-1.5' : 'mb-2 p-2'} border border-gray-400`}><h4 className="text-center font-extrabold text-sm mb-1">三、总分走势图</h4><div style={{height: `${chartHeight}px`, overflow: "hidden"}}><LineChart width={chartWidth} height={chartHeight} data={chartData} margin={{ top: isCompactPrint ? 22 : 28, right: 20, bottom: isCompactPrint ? 26 : 18, left: 24 }}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="name" fontSize={isCompactPrint ? 8 : 10} interval={0} tick={{fontWeight:'bold'}} angle={isCompactPrint ? -20 : 0} textAnchor={isCompactPrint ? 'end' : 'middle'} height={isCompactPrint ? 36 : 24} /><YAxis domain={chartYDomain} fontSize={9} tick={{fontWeight:'bold'}} width={26}/><Line type="monotone" dataKey="total" stroke="#000" strokeWidth={2} dot={{r:2.5}} isAnimationActive={false}><LabelList dataKey="total" position="top" style={{fontSize: isCompactPrint ? '8px' : '10px', fontWeight:'bold'}}/></Line></LineChart></div></div>
-                    <div className={`flex-1 border border-black rounded-sm ${isCompactPrint ? 'p-2' : 'p-3'}`}><h3 className="font-extrabold border-l-4 border-black pl-2 mb-1 text-base">四、智能诊断与备考建议</h3><div className={`${isCompactPrint ? 'text-[10px] space-y-1.5' : 'text-xs space-y-2'} leading-relaxed text-justify font-bold text-gray-900`}><p><strong>【学情综述】：</strong>{analysis.progress}</p><p><strong>【归因分析】：</strong>{analysis.subjectAnalysis}</p>{analysis.subjectAdviceList && analysis.subjectAdviceList.length > 0 && <div className="mt-2"><strong>【科目建议】：</strong><ul className="list-none pl-0 mt-1 space-y-1">{analysis.subjectAdviceList.map((item, i) => <li key={i}><span className="font-extrabold">{item.subject}</span>（{item.level}）：{item.suggestion}</li>)}</ul></div>}<div className="mt-2"><strong>【行动指南】：</strong><ul className="list-decimal pl-5 mt-1 space-y-1">{analysis.advice.map((a, i) => <li key={i}>{a}</li>)}</ul></div></div></div>
+                    <div className={`${isCompactPrint ? 'mb-1 p-1.5' : 'mb-2 p-2'} border border-gray-400`}><h4 className="text-center font-extrabold text-sm mb-1">三、总分走势图</h4><div style={{height: `${chartHeight}px`, overflow: "hidden"}}><LineChart width={chartWidth} height={chartHeight} data={chartData} margin={{ top: isCompactPrint ? 22 : 28, right: 20, bottom: isCompactPrint ? 26 : 18, left: 24 }}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="name" fontSize={isCompactPrint ? 8 : 10} interval={0} tick={{fontWeight:'bold'}} angle={isCompactPrint ? -20 : 0} textAnchor={isCompactPrint ? 'end' : 'middle'} height={isCompactPrint ? 36 : 24} /><YAxis domain={chartYDomain} fontSize={9} tick={{fontWeight:'bold'}} width={26}/><Line type="monotone" dataKey="total" stroke="#000" strokeWidth={2} dot={(props) => { const { cx, cy, payload } = props; return <circle cx={cx} cy={cy} r={2.8} fill={payload.dropTag ? "#dc2626" : "#000"} stroke="none" />; }} isAnimationActive={false}><LabelList dataKey="total" position="top" style={{fontSize: isCompactPrint ? '8px' : '10px', fontWeight:'bold'}}/><LabelList dataKey="passTag" position="insideTopRight" style={{fontSize: isCompactPrint ? '7px' : '8px', fontWeight:'bold', fill:'#1d4ed8'}}/><LabelList dataKey="dropTag" position="bottom" style={{fontSize: isCompactPrint ? '7px' : '8px', fontWeight:'bold', fill:'#dc2626'}}/></Line></LineChart></div></div>
+                    <div className={`flex-1 border border-black rounded-sm ${isCompactPrint ? 'p-2' : 'p-3'}`}><h3 className="font-extrabold border-l-4 border-black pl-2 mb-1 text-base">四、智能诊断与备考建议</h3><div className={`${isCompactPrint ? 'text-[10px] space-y-1.5' : 'text-xs space-y-2'} leading-relaxed font-bold text-gray-900`}><p><strong>【本次考试画像】</strong>{analysis.portrait}</p><p><strong>【趋势判断】</strong>{analysis.trend} {analysis.trendRaw}</p>{analysis.outlierNotes && analysis.outlierNotes.length > 0 && <div><strong>【离群提醒】</strong><ul className="list-disc pl-4">{analysis.outlierNotes.slice(0, 2).map((n, i) => <li key={i}>{n}</li>)}</ul></div>}{analysis.anomalyNotes && analysis.anomalyNotes.length > 0 && <div><strong>【异常检测（Median+MAD）】</strong><ul className="list-disc pl-4">{analysis.anomalyNotes.slice(0, 3).map((n, i) => <li key={i}>{n}</li>)}</ul></div>}<div><strong>【单科双维度诊断】</strong><table className={`w-full text-center border-collapse border border-black mt-1 ${isCompactPrint ? 'text-[9px]' : 'text-[10px]'}`}><thead><tr className="bg-gray-100"><th className="border border-black p-0.5">科目</th><th className="border border-black p-0.5">本次分</th><th className="border border-black p-0.5">个人历史位置</th><th className="border border-black p-0.5">相对班级</th><th className="border border-black p-0.5">综合判断</th></tr></thead><tbody>{analysis.subjectRows.slice(0, 6).map((r, i) => <tr key={i}><td className="border border-black p-0.5">{r.subject}</td><td className="border border-black p-0.5">{r.latest}</td><td className="border border-black p-0.5">{r.historyText}</td><td className="border border-black p-0.5">{r.classText}</td><td className="border border-black p-0.5">{r.judgement}</td></tr>)}</tbody></table></div>{analysis.subjectAdviceList && analysis.subjectAdviceList.length > 0 && <div><strong>【科目建议（决策树）】</strong><ul className="list-disc pl-4 space-y-1 mt-1">{analysis.subjectAdviceList.slice(0, 3).map((item, i) => <li key={i}><span className="font-extrabold">{item.subject}</span>（分支 {item.branch}）：{item.dataLine}{item.suggestion}</li>)}</ul></div>}<div><strong>【行动指南（优先级）】</strong><ol className="list-decimal pl-5 mt-1 space-y-1">{analysis.actionPlan.map((a, i) => <li key={i}>{a.title}（建议投入 {a.ratio}%）：{a.detail}</li>)}</ol></div></div></div>
                 </div>
             );
         };
@@ -529,10 +671,10 @@
                     <div className="w-full h-[320px]" style={{backgroundImage: 'linear-gradient(#9ca3af 1px, transparent 1px)', backgroundSize: '100% 30px'}}></div>
                     <div className="mt-4 flex justify-end"><p className="text-xs font-bold">学生签名：____________________</p></div>
                 </div>
-                <div className="h-40 border-2 border-black rounded-sm p-4 relative">
+                <div className="h-48 border-2 border-black rounded-sm p-4 relative">
                     <h3 className="font-extrabold text-base mb-3">六、家长寄语</h3>
-                    <div className="w-full h-20" style={{backgroundImage: 'linear-gradient(#d1d5db 1px, transparent 1px)', backgroundSize: '100% 30px'}}></div>
-                    <div className="mt-4 flex justify-end gap-8"><p className="text-xs font-bold">家长签名：____________________</p><p className="text-xs font-bold mt-1">日期：______年___月___日</p></div>
+                    <div className="w-full h-24" style={{backgroundImage: 'linear-gradient(#d1d5db 1px, transparent 1px)', backgroundSize: '100% 28px'}}></div>
+                    <div className="mt-5 flex justify-between items-center gap-8"><p className="text-xs font-bold">家长签名：________________________</p><p className="text-xs font-bold">日期：______年___月___日</p></div>
                 </div>
             </div>
         );
@@ -540,7 +682,18 @@
         // --- 前端学情报告（模块化布局，不包含五、六）---
         const StudentReportScreen = ({ student, cutoffs, allStudents, onBack }) => {
             const analysis = useMemo(() => generateDetailedAnalysis(student, cutoffs, allStudents), [student, cutoffs, allStudents]);
-            const chartData = student.scores.map((s, i) => ({ name: (RUNTIME_EXAMS[i] && RUNTIME_EXAMS[i].name) ? RUNTIME_EXAMS[i].name.replace(/[①-⑥]/g, '').replace('联考','') : `第${i + 1}次`, total: s.total }));
+            const chartData = student.scores.map((s, i) => {
+                const prevTotal = i > 0 ? (student.scores[i - 1]?.total || 0) : null;
+                const drop = prevTotal != null ? s.total - prevTotal : 0;
+                const examCutoff = cutoffs[i] || { special: 0, bachelor: 0 };
+                const passTag = s.total >= examCutoff.special ? "特控↑" : (s.total >= examCutoff.bachelor ? "本科↑" : "");
+                return {
+                    name: (RUNTIME_EXAMS[i] && RUNTIME_EXAMS[i].name) ? RUNTIME_EXAMS[i].name.replace(/[①-⑥]/g, '').replace('联考','') : `第${i + 1}次`,
+                    total: s.total,
+                    passTag,
+                    dropTag: drop <= -40 ? `${drop.toFixed(1)}分` : ""
+                };
+            });
             const chartYDomain = useMemo(() => {
                 const vals = chartData.map(d => d.total).filter(v => v != null && v > 0);
                 if (vals.length === 0) return ['auto', 'auto'];
@@ -612,7 +765,7 @@
                                             <XAxis dataKey="name" fontSize={12} tick={{ fill: '#64748b' }} padding={{ left: 20, right: 20 }} />
                                             <YAxis domain={chartYDomain} fontSize={12} tick={{ fill: '#64748b' }} width={36}/>
                                             <Tooltip contentStyle={{ borderRadius: 8 }}/>
-                                            <Line type="monotone" dataKey="total" stroke="#2563eb" strokeWidth={2} dot={{ r: 4 }} name="总分"><LabelList dataKey="total" position="top" className="font-bold"/></Line>
+                                            <Line type="monotone" dataKey="total" stroke="#2563eb" strokeWidth={2} dot={(props) => { const { cx, cy, payload } = props; return <circle cx={cx} cy={cy} r={4} fill={payload.dropTag ? "#dc2626" : "#2563eb"} />; }} name="总分"><LabelList dataKey="total" position="top" className="font-bold"/><LabelList dataKey="passTag" position="insideTopRight" style={{fontSize:'10px', fill:'#1d4ed8', fontWeight:'bold'}}/><LabelList dataKey="dropTag" position="bottom" style={{fontSize:'10px', fill:'#dc2626', fontWeight:'bold'}}/></Line>
                                         </LineChart>
                                     </ResponsiveContainer>
                                 </div>
@@ -625,29 +778,68 @@
                             </div>
                             <div className="p-6 space-y-5 text-slate-700">
                                 <div className="p-4 rounded-xl bg-blue-50/80 border border-blue-100">
-                                    <p className="text-xs font-bold text-blue-700 mb-1">【学情综述】</p>
-                                    <p className="text-sm leading-relaxed">{analysis.progress}</p>
+                                    <p className="text-xs font-bold text-blue-700 mb-1">【本次考试画像】</p>
+                                    <p className="text-sm leading-relaxed">{analysis.portrait}</p>
                                 </div>
                                 <div className="p-4 rounded-xl bg-amber-50/80 border border-amber-100">
-                                    <p className="text-xs font-bold text-amber-800 mb-1">【归因分析】</p>
-                                    <p className="text-sm leading-relaxed">{analysis.subjectAnalysis}</p>
+                                    <p className="text-xs font-bold text-amber-800 mb-1">【趋势判断（3+3稳健法）】</p>
+                                    <p className="text-sm leading-relaxed">{analysis.trend} {analysis.trendRaw}</p>
                                 </div>
+                                {analysis.outlierNotes && analysis.outlierNotes.length > 0 && (
+                                    <div className="p-4 rounded-xl bg-red-50/80 border border-red-100">
+                                        <p className="text-xs font-bold text-red-700 mb-2">【离群提醒】</p>
+                                        <ul className="list-disc list-inside space-y-1 text-sm leading-relaxed">{analysis.outlierNotes.map((n, i) => <li key={i}>{n}</li>)}</ul>
+                                    </div>
+                                )}
+                                {analysis.anomalyNotes && analysis.anomalyNotes.length > 0 && (
+                                    <div className="p-4 rounded-xl bg-orange-50/80 border border-orange-100">
+                                        <p className="text-xs font-bold text-orange-700 mb-2">【异常检测（Median + MAD）】</p>
+                                        <ul className="list-disc list-inside space-y-1 text-sm leading-relaxed">{analysis.anomalyNotes.slice(0, 6).map((n, i) => <li key={i}>{n}</li>)}</ul>
+                                    </div>
+                                )}
+                                {analysis.subjectRows && analysis.subjectRows.length > 0 && (
+                                    <div className="p-4 rounded-xl bg-slate-50/80 border border-slate-200 overflow-x-auto">
+                                        <p className="text-xs font-bold text-slate-700 mb-3">【单科诊断：双维度对照】</p>
+                                        <table className="w-full text-sm text-center border-collapse">
+                                            <thead>
+                                                <tr className="bg-slate-100 text-slate-700">
+                                                    <th className="border border-slate-200 px-2 py-2">科目</th>
+                                                    <th className="border border-slate-200 px-2 py-2">本次分</th>
+                                                    <th className="border border-slate-200 px-2 py-2">个人历史位置</th>
+                                                    <th className="border border-slate-200 px-2 py-2">相对班级</th>
+                                                    <th className="border border-slate-200 px-2 py-2">综合判断</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {analysis.subjectRows.map((r, i) => (
+                                                    <tr key={i}>
+                                                        <td className="border border-slate-200 px-2 py-2 font-bold">{r.subject}</td>
+                                                        <td className="border border-slate-200 px-2 py-2">{r.latest}</td>
+                                                        <td className="border border-slate-200 px-2 py-2">{r.historyText}</td>
+                                                        <td className="border border-slate-200 px-2 py-2">{r.classText}</td>
+                                                        <td className="border border-slate-200 px-2 py-2">{r.judgement}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
                                 {analysis.subjectAdviceList && analysis.subjectAdviceList.length > 0 && (
                                     <div className="p-4 rounded-xl bg-slate-50/80 border border-slate-200">
-                                        <p className="text-xs font-bold text-slate-700 mb-3">【科目建议】</p>
+                                        <p className="text-xs font-bold text-slate-700 mb-3">【科目建议（决策树）】</p>
                                         <div className="space-y-3">
                                             {analysis.subjectAdviceList.map((item, i) => (
                                                 <div key={i} className="pl-3 border-l-2 border-slate-300">
-                                                    <p className="text-sm font-bold text-slate-800">{item.subject} <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${item.level === '薄弱' ? 'bg-red-100 text-red-700' : item.level === '优势' ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-600'}`}>{item.level}</span></p>
-                                                    <p className="text-sm leading-relaxed mt-1 text-slate-600">{item.suggestion}</p>
+                                                    <p className="text-sm font-bold text-slate-800">{item.subject} <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-slate-200 text-slate-700">分支 {item.branch}</span></p>
+                                                    <p className="text-sm leading-relaxed mt-1 text-slate-600">{item.dataLine} {item.suggestion}</p>
                                                 </div>
                                             ))}
                                         </div>
                                     </div>
                                 )}
                                 <div className="p-4 rounded-xl bg-green-50/80 border border-green-100">
-                                    <p className="text-xs font-bold text-green-800 mb-2">【行动指南】</p>
-                                    <ul className="list-decimal list-inside space-y-2 text-sm leading-relaxed">{analysis.advice.map((a, i) => <li key={i}>{a}</li>)}</ul>
+                                    <p className="text-xs font-bold text-green-800 mb-2">【行动指南（优先级+时间分配）】</p>
+                                    <ul className="list-decimal list-inside space-y-2 text-sm leading-relaxed">{analysis.actionPlan.map((a, i) => <li key={i}>{a.title}：每日自习投入建议 {a.ratio}%，{a.detail}</li>)}</ul>
                                 </div>
                             </div>
                         </section>
