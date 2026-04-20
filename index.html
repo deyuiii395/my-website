@@ -194,17 +194,11 @@
             }).sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff)).slice(0, 2) : [];
             const contributionText = contribution.length ? contribution.map(x => `${x.sub}${formatSigned(x.diff)} 分`).join("，") : "暂无上次可比数据";
 
-            const totalOutlier = validScoreEntries
-                .map(x => ({ ...x, diff: x.total - totalMedian }))
-                .filter(x => Math.abs(x.diff) >= 40)
-                .map(x => `${RUNTIME_EXAMS[x.examIdx]?.name || `第${x.examIdx + 1}次`} 总分 ${x.total.toFixed(1)}，比你个人中位数 ${totalMedian.toFixed(1)} 偏离 ${formatSigned(x.diff)} 分，这种分数不能当常态。`);
-
             const goal = latest.total < lineTotal.bachelor ? "先冲本科线" : (latest.total < lineTotal.special ? "冲特控线" : (latest.total < lineTotal.top600 ? "冲 600 分线" : "冲清北线或稳住高位"));
             const overviewParagraphs = [
                 `你这次总分 ${latest.total.toFixed(1)} 分，${describeLine(latest.total, lineTotal)} 你现在的主目标是${goal}，另外你这次比班均 ${classAvgTotal.toFixed(1)} 分${latest.total >= classAvgTotal ? `高 ${Math.abs(latest.total - classAvgTotal).toFixed(1)} 分` : `低 ${Math.abs(latest.total - classAvgTotal).toFixed(1)} 分`}。`,
                 `你 9 次总分最高 ${totalMax.toFixed(1)}、最低 ${totalMin.toFixed(1)}、中位数 ${totalMedian.toFixed(1)}，这次在你自己的历史里属于${latest.total >= totalMedian ? "中高位" : "中低位"}。你和上次相比总分${prev ? formatSigned(latest.total - prev.total) : "暂无可比"}，主要变化来自 ${contributionText}。`,
-                trendText,
-                ...totalOutlier
+                trendText
             ];
 
             const activeSubjects = Object.keys(GAOKAO_LINES_PHYSICS.subjects).filter(sub => (latest.subjects[sub] || 0) > 0);
@@ -672,7 +666,7 @@
         // PAGE 2 (仅打印时使用)
         const ReportPageTwo = ({ student }) => (
             <div className="print-page">
-                <div className="border-b-2 border-black pb-2 mb-4 text-center"><h1 className="text-lg font-extrabold text-black">自我反思与家校共育 (第二页)</h1><p className="text-xs mt-1 font-bold">姓名：{student.name}</p></div>
+                <div className="border-b-2 border-black pb-2 mb-4 text-center"><h1 className="text-lg font-extrabold text-black">自我反思与家校共育 (第二页)</h1></div>
                 <div className="flex-1 mb-4 border-2 border-black rounded-sm p-4 relative">
                     <h3 className="font-extrabold text-base mb-3">五、自我反思与行动契约 (学生亲笔)</h3>
                     <div className="grid grid-cols-2 gap-8 mb-4"><div><p className="font-bold text-xs mb-1">本次考试核心得失：</p><div className="h-16 border-b-2 border-gray-400"></div></div><div><p className="font-bold text-xs mb-1">下阶段目标分数：</p><div className="h-16 border-b-2 border-gray-400"></div></div></div>
