@@ -208,49 +208,122 @@
             ];
 
             const activeSubjects = Object.keys(GAOKAO_LINES_PHYSICS.subjects).filter(sub => (latest.subjects[sub] || 0) > 0);
+            const moduleHintMap = {
+                语文: "作文立意+古诗文默写",
+                数学: "中档压轴前两问",
+                英语: "阅读理解+完形",
+                物理: "受力建模+电学计算",
+                化学: "工业流程+实验表述",
+                生物: "遗传题+实验设计"
+            };
             const subjectDetails = activeSubjects.map(sub => {
                 const lines = GAOKAO_LINES_PHYSICS.subjects[sub];
                 const latestVal = latest.subjects[sub] || 0;
-                const hist = student.scores.map(s => s.subjects[sub]).filter(v => v != null && v > 0);
+                const histEntries = student.scores
+                    .map((s, idx) => ({ score: s.subjects[sub], idx }))
+                    .filter(x => x.score != null && x.score > 0);
+                const hist = histEntries.map(x => x.score);
                 const med = median(hist);
                 const min = Math.min(...hist);
                 const max = Math.max(...hist);
+                const sortedHist = [...hist].sort((a, b) => a - b);
+                const secondLow = sortedHist.length > 1 ? sortedHist[1] : sortedHist[0];
                 const classVals = allStudents.map(s => s.scores[latestIdx]?.subjects[sub]).filter(v => v != null && v > 0);
                 const classMean = avg(classVals);
                 const madVal = mad(hist, med);
-                const threshold = Math.max(15, 2.5 * madVal);
-                const outlierNow = Math.abs(latestVal - med) >= threshold;
+                const strictThreshold = Math.max(15, 2.5 * madVal);
+                const strictOutlier = Math.abs(latestVal - med) >= strictThreshold;
+                const lowestAndGap = latestVal === min && (secondLow - min) >= 5;
+                const isAbnormal = strictOutlier || lowestAndGap;
                 const volatility = max - min;
                 const belowBachelor = latestVal < lines.bachelor;
+                const betweenBachelorSpecial = latestVal >= lines.bachelor && latestVal < lines.special;
+                const overSpecial = latestVal >= lines.special && latestVal < lines.top600;
+                const over600 = latestVal >= lines.top600;
+                const nearCeiling = (max - latestVal) <= 3 || latestVal >= (med + (max - med) * 0.75);
+                const nearLine = (
+                    (belowBachelor && (lines.bachelor - latestVal) <= 5) ||
+                    (betweenBachelorSpecial && (lines.special - latestVal) <= 5)
+                );
+                const hasGrowthSpace = !nearCeiling;
+                const longHard = belowBachelor && ((med < lines.bachelor - 5) || (latestVal < med - 5)) && hasGrowthSpace;
+                const stableAdvantage = overSpecial && !isAbnormal && volatility < 30;
                 const lineText = `${sub}${describeLine(latestVal, lines)}`;
                 const posText = `${sub}这 9 次在 ${min.toFixed(1)}-${max.toFixed(1)} 分之间，中位数 ${med.toFixed(1)}，你这次在${latestVal >= med ? "中高位" : "中低位"}。`;
                 const classText = `和班均比，你这次${latestVal >= classMean ? `高 ${Math.abs(latestVal - classMean).toFixed(1)} 分` : `低 ${Math.abs(latestVal - classMean).toFixed(1)} 分`}。`;
+                const lowestExamEntry = histEntries.find(x => x.score === min);
+                const lowestExamName = lowestExamEntry ? (RUNTIME_EXAMS[lowestExamEntry.idx]?.name || `第${lowestExamEntry.idx + 1}次`) : "历史最低那次";
 
-                let actionText = `我建议你这科按当前节奏做周复盘，每周至少做 2 次限时训练。`;
-                if (belowBachelor && latestVal < med) actionText = `这科是硬伤，我建议你每天拿 35-40 分钟专门补这科，先把最近 3 次错题按题型重做一遍。`;
-                else if (belowBachelor && latestVal >= med) actionText = `你这次已经接近你个人上限但还没过本科线，说明结构性短板明显，我建议你把高频失分题型单列清单，连续 2 周盯这一类。`;
-                else if (!belowBachelor && latestVal < lines.special && latestVal < med) actionText = `这科这次是失常，不要乱加任务，我建议你先把这次卷子完整订正，3 天内做二次回测。`;
-                else if (!belowBachelor && latestVal >= lines.special) actionText = `这科已经在特控线以上，我建议你做的是细节提分：每周固定 1 套压轴专项，把可拿分再抠 3-5 分。`;
-                if (volatility >= 20) actionText += ` 另外你这科波动有 ${volatility.toFixed(1)} 分，优先稳下限，先把最低分对应那次卷子重做。`;
+                let actionText = "";
+                if (over600) {
+                    actionText = `这科已经在 600 分线之上，先保持现有节奏就行。你只要把这次卷子的错题做一次轻量回看，重点防止同类计算失误复发。`;
+                } else if (overSpecial) {
+                    actionText = `这科已经过特控线，现阶段别加量，改做提纯。你把 ${moduleHintMap[sub] || "高频模块"} 的书写细节和计算步骤规范化，每周用 1 套卷子做“少错一题”训练。`;
+                } else if (betweenBachelorSpecial && latestVal < med && isAbnormal) {
+                    actionText = `这次明显是失常，不要乱开新任务。你只处理这一次 ${sub} 卷：先逐题订正，再把错题对应知识点写成 1 页清单，三天后做一次回测。`;
+                } else if (betweenBachelorSpecial) {
+                    actionText = `这科在本科线和特控线之间，还有抬分空间。下一步盯 ${moduleHintMap[sub] || "中档题"}，每次练习后把“会做但丢分”的步骤圈出来，优先把这类分数拿满。`;
+                } else if (belowBachelor && latestVal < med) {
+                    actionText = `这科是长期硬伤，先别追难题。第一步先把最近两次试卷里同一类错题归到一组，第二步只做这一组的变式题，先把本科线缺口补上。`;
+                } else if (belowBachelor && latestVal >= med) {
+                    actionText = `你这次已经接近个人上沿但还没过本科线，再单纯堆时长边际收益很低。先锁定短板类型（基础概念、题型转换、思路卡壳三选一），用 1 周做定点突破，不要盲目刷整套卷。`;
+                } else {
+                    actionText = `这科整体发挥正常，维持课堂节奏即可。你只需要对本次卷子做有针对性的错因复盘，不额外扩任务。`;
+                }
 
-                const priority = (belowBachelor ? 100 : 0) + (volatility >= 20 ? 25 : 0) + (outlierNow && latestVal < med ? 20 : 0) + Math.max(0, classMean - latestVal);
+                if (volatility >= 30) {
+                    actionText += ` 另外这科极差达到 ${volatility.toFixed(1)} 分，稳定性才是关键：回看 ${lowestExamName} 那张 ${min.toFixed(1)} 分的卷子，找出当时是时间分配、状态波动还是题型断档。`;
+                } else if (!isAbnormal && latestVal > med + 8) {
+                    actionText += ` 这次分数比你个人中位数高 ${Math.abs(latestVal - med).toFixed(1)} 分，先别把它当常态，下次再验证可复制性。`;
+                }
+
+                let priorityBand = 6;
+                if (longHard) priorityBand = 1;
+                else if (volatility >= 30 && hasGrowthSpace) priorityBand = 2;
+                else if (nearLine && hasGrowthSpace) priorityBand = 3;
+                else if (isAbnormal && latestVal < med) priorityBand = 4;
+                else if (nearCeiling) priorityBand = 5;
+                else if (stableAdvantage || over600) priorityBand = 6;
+
+                const priorityScore = (7 - priorityBand) * 100 + Math.max(0, classMean - latestVal);
+                const focusLevel = priorityBand <= 2 ? "重点投入" : (priorityBand === 3 ? "常规投入" : (priorityBand === 4 ? "不加专项" : (priorityBand === 5 ? "不加任务" : "维持现状")));
+
                 return {
                     subject: sub,
-                    priority,
-                    paragraph: `${lineText} ${posText} ${classText} ${actionText}`,
-                    timeWeight: Math.max(10, priority || 12)
+                    priorityBand,
+                    priorityScore,
+                    focusLevel,
+                    hasGrowthSpace,
+                    paragraph: `${lineText} ${posText} ${classText} ${actionText}`
                 };
-            }).sort((a, b) => b.priority - a.priority);
+            }).sort((a, b) => b.priorityScore - a.priorityScore);
 
-            const totalWeight = subjectDetails.slice(0, 4).reduce((sum, s) => sum + s.timeWeight, 0) || 1;
-            const actionItems = subjectDetails.slice(0, 4).map((s, idx) => {
-                const pct = idx === 3
-                    ? Math.max(10, 100 - subjectDetails.slice(0, 3).reduce((sum, x) => sum + Math.round((x.timeWeight / totalWeight) * 100), 0))
-                    : Math.max(10, Math.round((s.timeWeight / totalWeight) * 100));
-                return `优先级${idx + 1}：${s.subject}是当前提分杠杆，每天自习时间先放 ${pct}% 给${s.subject}；先把最近一次${s.subject}卷子错题回放，再做一套同题型限时训练。`;
-            });
+            const topCore = subjectDetails.filter(s => s.priorityBand <= 2).slice(0, 2);
+            const stabilityCore = subjectDetails.find(s => s.priorityBand === 2 && !topCore.some(t => t.subject === s.subject));
+            const keepCore = subjectDetails.find(s => s.priorityBand >= 5);
+            const normalCore = subjectDetails.find(s => s.priorityBand === 3 || s.priorityBand === 4);
 
-            return { overviewParagraphs, subjectParagraphs: subjectDetails.map(x => x.paragraph), actionItems };
+            const actionItems = [];
+            if (topCore.length > 0) {
+                const names = topCore.map(x => x.subject).join("和");
+                actionItems.push(`${names}是你这轮提分的主攻方向，接下来自习时间这两科占大头。先按“知识点->题型->限时回测”的顺序推进，连续两周只盯最拖分的模块。`);
+            }
+            if (stabilityCore) {
+                actionItems.push(`${stabilityCore.subject}先别追上限，先把下限拉起来。把历史最低分那次卷子完整复盘一遍，重点写出当时失分是节奏崩了还是题型断层，再针对那个原因修正训练。`);
+            }
+            if (normalCore) {
+                actionItems.push(`${normalCore.subject}按常规投入处理就够，不需要额外开专项。你只做这次卷子的订正闭环，确认同类题不再重复丢分。`);
+            }
+            if (keepCore) {
+                actionItems.push(`${keepCore.subject}目前接近个人上沿，保持课堂节奏即可。额外时间优先让给更有提分空间的科目，这样总分性价比更高。`);
+            }
+            while (actionItems.length < 3 && subjectDetails[actionItems.length]) {
+                const fill = subjectDetails[actionItems.length];
+                actionItems.push(`${fill.subject}按${fill.focusLevel}执行，先完成本次卷子的错因清单。动作做小做实，比加任务更有效。`);
+            }
+            const finalActionItems = actionItems.slice(0, 4);
+
+            return { overviewParagraphs, subjectParagraphs: subjectDetails.map(x => x.paragraph), actionItems: finalActionItems };
         };
 
         // --- Subject Analysis Component ---
