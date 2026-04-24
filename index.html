@@ -180,12 +180,12 @@
             const totalMedian = median(totalSeries);
             const totalMax = Math.max(...totalSeries);
             const totalMin = Math.min(...totalSeries);
-            const recent3 = totalSeries.slice(-3);
-            const prev3 = totalSeries.slice(-6, -3);
-            const delta = (recent3.length === 3 && prev3.length === 3) ? (avg(recent3) - avg(prev3)) : 0;
-            const trendText = recent3.length === 3 && prev3.length === 3
-                ? `最近 3 次均值比前 3 次 ${delta >= 0 ? "高" : "低"} ${Math.abs(delta).toFixed(1)} 分（前3次 ${prev3.map(v => v.toFixed(1)).join(" / ")}，最近3次 ${recent3.map(v => v.toFixed(1)).join(" / ")}），走势是${delta >= 15 ? "上升" : (delta <= -15 ? "下滑" : "平稳")}。`
-                : "目前有效总分不到 6 次，3+3 趋势还不稳，先按最近两次波动来盯。";
+            const recent2 = totalSeries.slice(-2);
+            const prev2 = totalSeries.slice(-4, -2);
+            const delta = (recent2.length === 2 && prev2.length === 2) ? (avg(recent2) - avg(prev2)) : 0;
+            const trendText = recent2.length === 2 && prev2.length === 2
+                ? `最近 2 次均值比前 2 次 ${delta >= 0 ? "高" : "低"} ${Math.abs(delta).toFixed(1)} 分（前2次 ${prev2.map(v => v.toFixed(1)).join(" / ")}，最近2次 ${recent2.map(v => v.toFixed(1)).join(" / ")}），走势是${delta >= 15 ? "上升" : (delta <= -15 ? "下滑" : "平稳")}。`
+                : "目前有效总分不到 4 次，2+2 趋势还不稳，先按最近一次波动来盯。";
 
             const contribution = prev ? Object.keys(GAOKAO_LINES_PHYSICS.subjects).map(sub => {
                 const curr = latest.subjects[sub] || 0;
