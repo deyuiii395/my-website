@@ -352,13 +352,16 @@
                 const max = Math.max(...scores);
                 const avg = (scores.reduce((a,b)=>a+b,0)/scores.length).toFixed(1);
                 
-                // Get cutoff for this subject (use default if not custom set)
-                const subLine = cutoffs[selectedExamId].subjects
+                // 语/数/外及格线固定为 90 分，其余科目沿用配置线
+                const isCoreSubject = ['语文', '数学', '英语'].includes(selectedSub);
+                const configuredLine = cutoffs[selectedExamId].subjects
                     ? cutoffs[selectedExamId].subjects[selectedSub]
                     : (RUNTIME_EXAMS[selectedExamId]?.defaultSubs?.[selectedSub] ?? 0);
+                const subLine = isCoreSubject ? 90 : configuredLine;
                 
                 const passCount = scores.filter(s => s >= subLine).length;
                 const passRate = ((passCount / scores.length) * 100).toFixed(1);
+                const failCount = scores.length - passCount;
                 
                 // Distribution
                 const fullMark = (['语文','数学','英语'].includes(selectedSub)) ? 150 : 100;
@@ -391,7 +394,7 @@
                     .sort((a, b) => b.score - a.score)
                     .slice(0, 10);
 
-                return { max, avg, passRate, dist, stars, subLine, top10 };
+                return { max, avg, passRate, dist, stars, subLine, top10, failCount, studentCount: scores.length };
             }, [allStudents, selectedSub, selectedExamId, cutoffs]);
 
             if (!analysisData) return <div className="p-10 text-center text-gray-500">暂无该次考试的{selectedSub}数据</div>;
@@ -434,7 +437,7 @@
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
                         <div className="bg-white p-6 rounded-xl card-shadow">
                             <h3 className="font-bold text-gray-800 mb-4 flex items-center"><Icons.Trophy className="mr-2 text-amber-500"/> {selectedSub} 单科前十名单</h3>
                             {analysisData.top10.length > 0 ? (
@@ -477,28 +480,28 @@
                                 <p className="text-gray-400 text-sm">暂无对比数据</p>
                             )}
                         </div>
-                    </div>
 
-                    <div className="bg-white p-6 rounded-xl card-shadow">
-                        <h3 className="font-bold text-gray-800 mb-4">📊 {selectedSub}成绩分布直方图</h3>
-                        <div className="h-64">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={[
-                                    {range: '<60%', count: analysisData.dist[0]},
-                                    {range: '60-70%', count: analysisData.dist[1]},
-                                    {range: '70-80%', count: analysisData.dist[2]},
-                                    {range: '80-90%', count: analysisData.dist[3]},
-                                    {range: '>90%', count: analysisData.dist[4]},
-                                ]}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false}/>
-                                    <XAxis dataKey="range" fontSize={12}/>
-                                    <YAxis allowDecimals={false}/>
-                                    <Tooltip cursor={{fill: '#f3f4f6'}}/>
-                                    <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40}>
-                                        <LabelList dataKey="count" position="top" />
-                                    </Bar>
-                                </BarChart>
-                            </ResponsiveContainer>
+                        <div className="bg-white p-6 rounded-xl card-shadow">
+                            <h3 className="font-bold text-gray-800 mb-4">📊 {selectedSub}频率分布直方图</h3>
+                            <div className="h-64">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart data={[
+                                        {range: '<60%', count: analysisData.dist[0]},
+                                        {range: '60-70%', count: analysisData.dist[1]},
+                                        {range: '70-80%', count: analysisData.dist[2]},
+                                        {range: '80-90%', count: analysisData.dist[3]},
+                                        {range: '>90%', count: analysisData.dist[4]},
+                                    ]}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false}/>
+                                        <XAxis dataKey="range" fontSize={12}/>
+                                        <YAxis allowDecimals={false}/>
+                                        <Tooltip cursor={{fill: '#f3f4f6'}}/>
+                                        <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40}>
+                                            <LabelList dataKey="count" position="top" />
+                                        </Bar>
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
                         </div>
                     </div>
                     
@@ -506,9 +509,9 @@
                         <h3 className="font-bold text-blue-800 mb-2">🤖 AI 学情简报</h3>
                         <p className="text-sm text-blue-800 leading-relaxed">
                             本次{(RUNTIME_EXAMS[selectedExamId] && RUNTIME_EXAMS[selectedExamId].name) || ''}中，全班{selectedSub}学科平均分为 <span className="font-bold">{analysisData.avg}</span>。
-                            从分布来看，优秀率（得分率≥80%）达到了 <span className="font-bold">{(((analysisData.dist[3] + analysisData.dist[4]) / allStudents.length) * 100).toFixed(1)}%</span>，
-                            尚有 <span className="font-bold">{analysisData.dist[0]}</span> 人未及格。
-                            {analysisData.dist[0] > 5 ? "建议重点关注后进生的基础巩固。" : "整体基础较为扎实，可适当增加拔高训练。"}
+                            从分布来看，优秀率（得分率≥80%）达到了 <span className="font-bold">{(((analysisData.dist[3] + analysisData.dist[4]) / analysisData.studentCount) * 100).toFixed(1)}%</span>，
+                            尚有 <span className="font-bold">{analysisData.failCount}</span> 人未及格（及格线：{analysisData.subLine}分）。
+                            {analysisData.failCount > 5 ? "建议重点关注后进生的基础巩固。" : "整体基础较为扎实，可适当增加拔高训练。"}
                         </p>
                     </div>
                 </div>
