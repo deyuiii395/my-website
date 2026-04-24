@@ -524,19 +524,57 @@
                 return RUNTIME_EXAMS.map((cfg, idx) => {
                     const students = allStudents.filter(s => s.scores[idx] && s.scores[idx].total > 0);
                     if (students.length === 0) return { name: cfg.name, avg: 0, specialCount: 0, bachelorCount: 0, subs: {} };
+
                     const totalSum = students.reduce((a, b) => a + b.scores[idx].total, 0);
-                    const specialList = students.filter(s => s.scores[idx].total >= cutoffs[idx].special);
-                    const bachelorList = students.filter(s => s.scores[idx].total >= cutoffs[idx].bachelor);
-                    let subSums = {}; let subCounts = {};
-                    students.forEach(s => { Object.entries(s.scores[idx].subjects).forEach(([sub, score]) => { if(score > 0) { subSums[sub] = (subSums[sub] || 0) + score; subCounts[sub] = (subCounts[sub] || 0) + 1; } }); });
-                    let subAvgs = {}; SUBJECTS.forEach(sub => { subAvgs[sub] = subCounts[sub] ? parseFloat((subSums[sub] / subCounts[sub]).toFixed(1)) : 0; });
-                    return { name: (cfg.name && cfg.name.split(' ')[1]) || cfg.name || `第${idx + 1}次`, avg: parseFloat((totalSum / students.length).toFixed(1)), specialCount: specialList.length, bachelorCount: bachelorList.length, specialList: specialList.sort((a,b) => b.scores[idx].total - a.scores[idx].total), ...subAvgs };
+                    const specialLine = cutoffs[idx]?.special ?? 0;
+                    const bachelorLine = cutoffs[idx]?.bachelor ?? 0;
+                    const specialList = students.filter(s => s.scores[idx].total >= specialLine);
+                    const bachelorList = students.filter(s => s.scores[idx].total >= bachelorLine);
+
+                    let subSums = {};
+                    let subCounts = {};
+                    students.forEach(s => {
+                        Object.entries(s.scores[idx].subjects).forEach(([sub, score]) => {
+                            if (score > 0) {
+                                subSums[sub] = (subSums[sub] || 0) + score;
+                                subCounts[sub] = (subCounts[sub] || 0) + 1;
+                            }
+                        });
+                    });
+
+                    let subAvgs = {};
+                    SUBJECTS.forEach(sub => {
+                        subAvgs[sub] = subCounts[sub] ? parseFloat((subSums[sub] / subCounts[sub]).toFixed(1)) : 0;
+                    });
+
+                    return {
+                        name: (cfg.name && cfg.name.split(' ')[1]) || cfg.name || `第${idx + 1}次`,
+                        avg: parseFloat((totalSum / students.length).toFixed(1)),
+                        specialCount: specialList.length,
+                        bachelorCount: bachelorList.length,
+                        specialList: specialList.sort((a, b) => b.scores[idx].total - a.scores[idx].total),
+                        ...subAvgs
+                    };
                 });
             }, [allStudents, cutoffs]);
+
             const latestStat = stats[stats.length - 1];
             const lastIdx = getLastExamIndex();
             const prevIdx = Math.max(0, lastIdx - 1);
-            const bachelorList = allStudents.filter(s => s.scores[lastIdx]?.total >= cutoffs[lastIdx]?.bachelor).sort((a,b) => b.scores[lastIdx].total - a.scores[lastIdx].total);
+            const bachelorLine = cutoffs[lastIdx]?.bachelor ?? 0;
+            const hopefulLine = bachelorLine - 10;
+
+            const bachelorList = allStudents
+                .filter(s => s.scores[lastIdx]?.total >= bachelorLine)
+                .sort((a, b) => b.scores[lastIdx].total - a.scores[lastIdx].total);
+
+            const hopefulList = allStudents
+                .filter(s => {
+                    const total = s.scores[lastIdx]?.total || 0;
+                    return total > 0 && total >= hopefulLine && total < bachelorLine;
+                })
+                .sort((a, b) => b.scores[lastIdx].total - a.scores[lastIdx].total);
+
             const progressOver30 = allStudents
                 .filter(s => s.scores[lastIdx]?.total > 0 && s.scores[prevIdx]?.total > 0)
                 .map(s => ({ ...s, progress: s.scores[lastIdx].total - s.scores[prevIdx].total }))
@@ -551,7 +589,7 @@
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="bg-white p-4 rounded-xl card-shadow"><h3 className="font-bold text-gray-800 mb-4 flex items-center"><Icons.Activity className="mr-2 text-green-600"/> 各科平均分走势</h3><div className="h-72"><ResponsiveContainer width="100%" height="100%"><LineChart data={stats}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="name" fontSize={12}/><YAxis domain={[0, 150]}/><Tooltip/><Legend wrapperStyle={{fontSize:'10px'}}/>{SUBJECTS.map((sub, i) => <Line key={sub} type="monotone" dataKey={sub} stroke={COLORS[i]} strokeWidth={2} dot={false}/>)}</LineChart></ResponsiveContainer></div></div>
-                        <div className="bg-white p-6 rounded-xl card-shadow flex flex-col"><div className="flex justify-between items-center mb-4 border-b pb-2"><h3 className="font-bold text-lg text-gray-800">🏆 最新光荣榜</h3><span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">特控: {cutoffs[lastIdx]?.special} | 本科: {cutoffs[lastIdx]?.bachelor}</span></div><div className="flex-1 overflow-y-auto"><div className="mb-4"><h4 className="font-bold text-purple-700 mb-2 flex items-center"><span className="w-2 h-2 rounded-full bg-purple-700 mr-2"></span>特控线 ({latestStat.specialList?.length || 0}人)</h4><div className="flex flex-wrap gap-2">{latestStat.specialList && latestStat.specialList.map((s, i) => <button key={i} onClick={() => onStudentClick(s)} className="px-3 py-2 bg-purple-50 text-purple-700 text-base font-bold rounded hover:bg-purple-100 transition">{s.name} <span>{s.scores[lastIdx]?.total}</span></button>)}</div></div><div><h4 className="font-bold text-blue-600 mb-2 flex items-center"><span className="w-2 h-2 rounded-full bg-blue-600 mr-2"></span>本科线 ({bachelorList.length}人)</h4><div className="flex flex-wrap gap-2">{bachelorList.map((s, i) => <button key={i} onClick={() => onStudentClick(s)} className="px-3 py-2 bg-blue-50 text-blue-600 text-base font-bold rounded hover:bg-blue-100 transition">{s.name} <span>{s.scores[lastIdx]?.total}</span></button>)}</div></div><div className="mt-4"><h4 className="font-bold text-green-600 mb-2 flex items-center"><span className="w-2 h-2 rounded-full bg-green-600 mr-2"></span>分数进步超过30分 ({progressOver30.length}人)</h4><div className="flex flex-wrap gap-2">{progressOver30.map((s, i) => <button key={i} onClick={() => onStudentClick(s)} className="px-3 py-2 bg-green-50 text-green-700 text-base font-bold rounded hover:bg-green-100 transition">{s.name}（{s.progress}分）</button>)}</div></div></div></div>
+                        <div className="bg-white p-6 rounded-xl card-shadow flex flex-col"><div className="flex justify-between items-center mb-4 border-b pb-2"><h3 className="font-bold text-lg text-gray-800">🏆 最新光荣榜</h3><span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">特控: {cutoffs[lastIdx]?.special} | 本科: {cutoffs[lastIdx]?.bachelor} | 希望生: 本科线-10</span></div><div className="flex-1 overflow-y-auto"><div className="mb-4"><h4 className="font-bold text-purple-700 mb-2 flex items-center"><span className="w-2 h-2 rounded-full bg-purple-700 mr-2"></span>特控线 ({latestStat.specialList?.length || 0}人)</h4><div className="flex flex-wrap gap-2">{latestStat.specialList && latestStat.specialList.map((s, i) => <button key={i} onClick={() => onStudentClick(s)} className="px-3 py-2 bg-purple-50 text-purple-700 text-base font-bold rounded hover:bg-purple-100 transition">{s.name} <span>{s.scores[lastIdx]?.total}</span></button>)}</div></div><div><h4 className="font-bold text-blue-600 mb-2 flex items-center"><span className="w-2 h-2 rounded-full bg-blue-600 mr-2"></span>本科线 ({bachelorList.length}人)</h4><div className="flex flex-wrap gap-2">{bachelorList.map((s, i) => <button key={i} onClick={() => onStudentClick(s)} className="px-3 py-2 bg-blue-50 text-blue-600 text-base font-bold rounded hover:bg-blue-100 transition">{s.name} <span>{s.scores[lastIdx]?.total}</span></button>)}</div></div><div className="mt-4"><h4 className="font-bold text-amber-600 mb-2 flex items-center"><span className="w-2 h-2 rounded-full bg-amber-500 mr-2"></span>希望生（本科线-10分内） ({hopefulList.length}人)</h4><div className="flex flex-wrap gap-2">{hopefulList.map((s, i) => <button key={i} onClick={() => onStudentClick(s)} className="px-3 py-2 bg-amber-50 text-amber-700 text-base font-bold rounded hover:bg-amber-100 transition">{s.name} <span>{s.scores[lastIdx]?.total}</span></button>)}</div></div><div className="mt-4"><h4 className="font-bold text-green-600 mb-2 flex items-center"><span className="w-2 h-2 rounded-full bg-green-600 mr-2"></span>分数进步超过30分 ({progressOver30.length}人)</h4><div className="flex flex-wrap gap-2">{progressOver30.map((s, i) => <button key={i} onClick={() => onStudentClick(s)} className="px-3 py-2 bg-green-50 text-green-700 text-base font-bold rounded hover:bg-green-100 transition">{s.name}（{s.progress}分）</button>)}</div></div></div></div>
                     </div>
                 </div>
             );
