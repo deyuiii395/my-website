@@ -217,6 +217,27 @@ function ensureStudentScoresLength(studentScores, examCount) {
   return scores;
 }
 
+// 按考试序号排序（序号 1 代表最早一场）
+function getExamOrderValue(exam) {
+  const rawId = exam && exam.id != null ? String(exam.id) : '';
+  const idMatch = rawId.match(/(\d+)/);
+  if (idMatch) return Number.parseInt(idMatch[1], 10);
+
+  const rawName = exam && exam.name != null ? String(exam.name) : '';
+  const nameMatch = rawName.match(/(\d+)/);
+  if (nameMatch) return Number.parseInt(nameMatch[1], 10);
+
+  return Number.MAX_SAFE_INTEGER;
+}
+
+function sortExamsByOrder(exams) {
+  return [...(exams || [])].sort((a, b) => {
+    const orderDiff = getExamOrderValue(a) - getExamOrderValue(b);
+    if (orderDiff !== 0) return orderDiff;
+    return String(a?.id ?? '').localeCompare(String(b?.id ?? ''), 'en', { numeric: true, sensitivity: 'base' });
+  });
+}
+
 // 解析 Excel/CSV 行到学生数据
 function parseRows(rows, examIndex, examCount) {
   const studentMap = {};
@@ -279,7 +300,7 @@ async function authMiddleware(req, res, next) {
 app.get('/api/data', async (req, res) => {
   try {
     const students = await Student.find({});
-    const exams = await Exam.find({});
+    const exams = sortExamsByOrder(await Exam.find({}));
     // cutoffs 由 exams 直接提供
     const cutoffs = exams.map(e => e.cutoffs);
     res.json({ students, cutoffs, exams });
@@ -311,7 +332,7 @@ app.post('/api/login', async (req, res) => {
 // 获取考试列表
 app.get('/api/exams', authMiddleware, async (req, res) => {
   try {
-    const exams = await Exam.find({}).sort({ id: 1 });
+    const exams = sortExamsByOrder(await Exam.find({}));
     res.json(exams);
   } catch (err) {
     res.status(500).json({ error: '获取考试列表失败' });
@@ -324,6 +345,11 @@ app.post('/api/exams', authMiddleware, async (req, res) => {
     const { name, date, cutoffs } = req.body || {};
     if (!name) {
       return res.status(400).json({ error: '考试名称必填' });
+    }
+
+    const duplicate = await Exam.findOne({ name });
+    if (duplicate) {
+      return res.status(400).json({ error: '同名考试已存在，请勿重复添加' });
     }
 
     const examCount = await Exam.countDocuments();
@@ -415,7 +441,7 @@ app.delete('/api/exams/:examId', authMiddleware, async (req, res) => {
     await Exam.deleteOne({ id: examId });
 
     // 获取剩余考试，按id排序
-    const remainingExams = await Exam.find({}).sort({ id: 1 });
+    const remainingExams = sortExamsByOrder(await Exam.find({}));
 
     // 重新编号考试id
     for (let i = 0; i < remainingExams.length; i++) {
@@ -447,20 +473,20 @@ app.delete('/api/exams/:examId', authMiddleware, async (req, res) => {
 app.delete('/api/exams/duplicates/:examName', authMiddleware, async (req, res) => {
   try {
     const { examName } = req.params;
-    const exams = await Exam.find({ name: examName }).sort({ id: -1 }); // 按id降序，最新创建的在前
+    const exams = sortExamsByOrder(await Exam.find({ name: examName }));
     if (exams.length <= 1) {
       return res.status(400).json({ error: '没有重复考试' });
     }
 
-    // 删除最新创建的（id最大的）
-    const examToDelete = exams[0];
+    // 删除最新创建的（序号最大的）
+    const examToDelete = exams[exams.length - 1];
     const deleteExamIndex = parseInt(examToDelete.id.split('-')[1]) - 1;
 
     // 删除考试
     await Exam.deleteOne({ _id: examToDelete._id });
 
     // 获取剩余考试，按id排序
-    const remainingExams = await Exam.find({}).sort({ id: 1 });
+    const remainingExams = sortExamsByOrder(await Exam.find({}));
 
     // 重新编号考试id
     for (let i = 0; i < remainingExams.length; i++) {
@@ -566,7 +592,7 @@ app.delete('/api/students/:id', authMiddleware, async (req, res) => {
 app.put('/api/cutoffs', authMiddleware, async (req, res) => {
   try {
     const cutoffs = req.body;
-    const exams = await Exam.find({}).sort({ id: 1 });
+    const exams = sortExamsByOrder(await Exam.find({}));
 
     if (Array.isArray(cutoffs) && cutoffs.length === exams.length) {
       for (let i = 0; i < exams.length; i++) {

@@ -96,6 +96,24 @@
         // 运行时考试配置：默认使用 EXAM_CONFIG，加载后端 exams 后会覆盖（Data-Driven，支持 n 次考试）
         let RUNTIME_EXAMS = EXAM_CONFIG;
         const getLastExamIndex = () => Math.max(0, (RUNTIME_EXAMS && RUNTIME_EXAMS.length) ? RUNTIME_EXAMS.length - 1 : 5);
+        const getExamOrderValue = (exam) => {
+            const rawId = exam && exam.id != null ? String(exam.id) : '';
+            const idMatch = rawId.match(/(\d+)/);
+            if (idMatch) return Number.parseInt(idMatch[1], 10);
+
+            const rawName = exam && exam.name != null ? String(exam.name) : '';
+            const nameMatch = rawName.match(/(\d+)/);
+            if (nameMatch) return Number.parseInt(nameMatch[1], 10);
+
+            return Number.MAX_SAFE_INTEGER;
+        };
+        const sortExamsByOrder = (exams) => {
+            return [...(exams || [])].sort((a, b) => {
+                const orderDiff = getExamOrderValue(a) - getExamOrderValue(b);
+                if (orderDiff !== 0) return orderDiff;
+                return String(a && a.id != null ? a.id : '').localeCompare(String(b && b.id != null ? b.id : ''), 'en', { numeric: true, sensitivity: 'base' });
+            });
+        };
         const SUBJECTS = ['语文', '数学', '英语', '物理', '化学', '生物', '政治', '历史', '地理'];
         const COLORS = ["#ef4444", "#f97316", "#f59e0b", "#10b981", "#06b6d4", "#3b82f6", "#6366f1", "#8b5cf6", "#d946ef"];
         const GAOKAO_LINES_PHYSICS = {
@@ -838,17 +856,24 @@
             useEffect(() => {
                 fetch('/api/data').then(r => r.ok ? r.json() : Promise.reject()).then(data => {
                     if (data.students && data.students.length >= 0 && data.cutoffs && data.cutoffs.length > 0) {
+                        let runtimeCutoffs = data.cutoffs;
                         if (data.exams && data.exams.length) {
-                            RUNTIME_EXAMS = data.exams.map((e, i) => ({
+                            const sortedExams = sortExamsByOrder(data.exams);
+                            RUNTIME_EXAMS = sortedExams.map((e, i) => ({
                                 id: e.id != null ? e.id : i,
                                 name: e.name || `第${i + 1}次考试`,
                                 defaultSpecial: (e.cutoffs && e.cutoffs.special != null) ? e.cutoffs.special : (EXAM_CONFIG[i]?.defaultSpecial ?? 0),
                                 defaultBachelor: (e.cutoffs && e.cutoffs.bachelor != null) ? e.cutoffs.bachelor : (EXAM_CONFIG[i]?.defaultBachelor ?? 0),
                                 defaultSubs: (e.cutoffs && e.cutoffs.subjects) ? e.cutoffs.subjects : (EXAM_CONFIG[i]?.defaultSubs || {})
                             }));
+                            runtimeCutoffs = sortedExams.map((e, i) => ({
+                                special: (e.cutoffs && e.cutoffs.special != null) ? e.cutoffs.special : (RUNTIME_EXAMS[i]?.defaultSpecial ?? 0),
+                                bachelor: (e.cutoffs && e.cutoffs.bachelor != null) ? e.cutoffs.bachelor : (RUNTIME_EXAMS[i]?.defaultBachelor ?? 0),
+                                subjects: { ...((e.cutoffs && e.cutoffs.subjects) ? e.cutoffs.subjects : (RUNTIME_EXAMS[i]?.defaultSubs || {})) }
+                            }));
                         }
                         setStudents(data.students);
-                        setCutoffs(data.cutoffs);
+                        setCutoffs(runtimeCutoffs);
                         setDataSource('api');
                     }
                 }).catch(() => {}).finally(() => setLoading(false));
