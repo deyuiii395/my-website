@@ -192,6 +192,7 @@
             const latestIdx = latest.examIdx;
             const prev = validScoreEntries.length > 1 ? validScoreEntries[validScoreEntries.length - 2] : null;
             const totalSeries = validScoreEntries.map(s => s.total);
+            const validExamCount = totalSeries.length;
             const classTotalsLatest = allStudents.map(s => s.scores[latestIdx]?.total || 0).filter(v => v > 0);
             const classAvgTotal = avg(classTotalsLatest);
             const lineTotal = GAOKAO_LINES_PHYSICS.total;
@@ -215,7 +216,7 @@
             const goal = latest.total < lineTotal.bachelor ? "先冲本科线" : (latest.total < lineTotal.special ? "冲特控线" : (latest.total < lineTotal.top600 ? "冲 600 分线" : "冲清北线或稳住高位"));
             const overviewParagraphs = [
                 `你这次总分 ${latest.total.toFixed(1)} 分，${describeLine(latest.total, lineTotal)} 你现在的主目标是${goal}，另外你这次比班均 ${classAvgTotal.toFixed(1)} 分${latest.total >= classAvgTotal ? `高 ${Math.abs(latest.total - classAvgTotal).toFixed(1)} 分` : `低 ${Math.abs(latest.total - classAvgTotal).toFixed(1)} 分`}。`,
-                `你 9 次总分最高 ${totalMax.toFixed(1)}、最低 ${totalMin.toFixed(1)}、中位数 ${totalMedian.toFixed(1)}，这次在你自己的历史里属于${latest.total >= totalMedian ? "中高位" : "中低位"}。你和上次相比总分${prev ? formatSigned(latest.total - prev.total) : "暂无可比"}，主要变化来自 ${contributionText}。`,
+                `你 ${validExamCount} 次总分最高 ${totalMax.toFixed(1)}、最低 ${totalMin.toFixed(1)}、中位数 ${totalMedian.toFixed(1)}，这次在你自己的历史里属于${latest.total >= totalMedian ? "中高位" : "中低位"}。你和上次相比总分${prev ? formatSigned(latest.total - prev.total) : "暂无可比"}，主要变化来自 ${contributionText}。`,
                 trendText
             ];
 
@@ -261,7 +262,7 @@
                 const longHard = belowBachelor && ((med < lines.bachelor - 5) || (latestVal < med - 5)) && hasGrowthSpace;
                 const stableAdvantage = overSpecial && !isAbnormal && volatility < 30;
                 const lineText = `${sub}${describeLine(latestVal, lines)}`;
-                const posText = `${sub}这 9 次在 ${min.toFixed(1)}-${max.toFixed(1)} 分之间，中位数 ${med.toFixed(1)}，你这次在${latestVal >= med ? "中高位" : "中低位"}。`;
+                const posText = `${sub}这 ${hist.length} 次在 ${min.toFixed(1)}-${max.toFixed(1)} 分之间，中位数 ${med.toFixed(1)}，你这次在${latestVal >= med ? "中高位" : "中低位"}。`;
                 const classText = `和班均比，你这次${latestVal >= classMean ? `高 ${Math.abs(latestVal - classMean).toFixed(1)} 分` : `低 ${Math.abs(latestVal - classMean).toFixed(1)} 分`}。`;
                 const lowestExamEntry = histEntries.find(x => x.score === min);
                 const lowestExamName = lowestExamEntry ? (RUNTIME_EXAMS[lowestExamEntry.idx]?.name || `第${lowestExamEntry.idx + 1}次`) : "历史最低那次";
@@ -676,21 +677,25 @@
         // PAGE 1
         const ReportPage = ({ student, cutoffs, allStudents }) => {
             const analysis = useMemo(() => generateDetailedAnalysis(student, cutoffs, allStudents), [student, cutoffs, allStudents]);
-            const chartData = student.scores.map((s, i) => {
-                const prevTotal = i > 0 ? (student.scores[i - 1]?.total || 0) : null;
+            const validExamEntries = student.scores
+                .map((s, idx) => ({ score: s, idx }))
+                .filter(x => (x.score?.total || 0) > 0);
+            const latestValidScore = validExamEntries.length ? validExamEntries[validExamEntries.length - 1].score : null;
+            const chartData = validExamEntries.map(({ score: s, idx }, pos) => {
+                const prevTotal = pos > 0 ? (validExamEntries[pos - 1].score.total || 0) : null;
                 const drop = prevTotal != null ? s.total - prevTotal : 0;
-                const examCutoff = cutoffs[i] || { special: 0, bachelor: 0 };
+                const examCutoff = cutoffs[idx] || { special: 0, bachelor: 0 };
                 const passTag = s.total >= examCutoff.special
                     ? `特控线${examCutoff.special}`
                     : (s.total >= examCutoff.bachelor ? `本科线${examCutoff.bachelor}` : "");
                 return {
-                    name: (RUNTIME_EXAMS[i] && RUNTIME_EXAMS[i].name) ? RUNTIME_EXAMS[i].name.replace(/[①-⑥]/g, '').replace('联考','') : `第${i + 1}次`,
+                    name: (RUNTIME_EXAMS[idx] && RUNTIME_EXAMS[idx].name) ? RUNTIME_EXAMS[idx].name.replace(/[①-⑥]/g, '').replace('联考','') : `第${idx + 1}次`,
                     total: s.total,
                     passTag,
                     dropTag: drop <= -40 ? `${drop.toFixed(1)}分` : ""
                 };
             });
-            const examCount = student.scores.length;
+            const examCount = validExamEntries.length;
             const isCompactPrint = examCount >= 8;
             const chartYDomain = useMemo(() => {
                 const vals = chartData.map(d => d.total).filter(v => v != null && v > 0);
@@ -704,8 +709,8 @@
             return (
                 <div className={`print-page print-page-1 ${isCompactPrint ? 'compact' : ''}`}>
                     <div className={`border-b-2 border-black text-center ${isCompactPrint ? 'pb-1 mb-1' : 'pb-2 mb-2'}`}><h1 className={`${isCompactPrint ? 'text-xl' : 'text-2xl'} font-extrabold tracking-widest text-black`}>2026届高33班学生学情分析报告</h1><p className="text-xs mt-1 text-gray-700 font-bold">生成日期：{new Date().toLocaleDateString()} &nbsp;|&nbsp; 班级：高33班</p></div>
-                    <div className={`${isCompactPrint ? 'mb-1 p-1.5' : 'mb-2 p-2'} border border-black rounded-sm bg-gray-50`}><h3 className="font-extrabold border-l-4 border-black pl-2 mb-1 text-base">一、学生基本信息</h3><div className="flex justify-between items-end px-2"><div><span className="text-gray-600 text-xs font-bold">姓名</span><p className={`${isCompactPrint ? 'text-base' : 'text-lg'} font-extrabold`}>{student.name}</p></div><div><span className="text-gray-600 text-xs font-bold">学号</span><p className="text-base font-bold font-mono">{student.id}</p></div><div><span className="text-gray-600 text-xs font-bold">最新总分</span><p className={`${isCompactPrint ? 'text-base' : 'text-lg'} font-extrabold text-blue-800`}>{student.scores[getLastExamIndex()]?.total || '-'}</p></div><div><span className="text-gray-600 text-xs font-bold">班排</span><p className={`${isCompactPrint ? 'text-base' : 'text-lg'} font-extrabold`}>{student.scores[getLastExamIndex()]?.rank || '-'}</p></div><div><span className="text-gray-600 text-xs font-bold">年级排名</span><p className={`${isCompactPrint ? 'text-base' : 'text-lg'} font-extrabold`}>{student.scores[getLastExamIndex()]?.gradeRank || '-'}</p></div></div></div>
-                    <div className={`${isCompactPrint ? 'mb-1' : 'mb-2'}`}><h3 className="font-extrabold border-l-4 border-black pl-2 mb-1 text-base">二、联考成绩全景表</h3><table className={`w-full text-center border-collapse border border-black ${isCompactPrint ? 'text-[10px]' : 'text-xs'}`}><thead className="bg-gray-200 font-extrabold text-black"><tr><th className={`border border-black ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>考试名称</th><th className={`border border-black bg-blue-100 ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>总分</th><th className={`border border-black ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>班排</th><th className={`border border-black ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>校排</th><th className={`border border-black text-purple-900 ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>特控线</th><th className={`border border-black text-blue-900 ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>本科线</th>{SUBJECTS.map(s => <th key={s} className={`border border-black ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>{s}</th>)}</tr></thead><tbody>{student.scores.map((s, idx) => <tr key={idx} className="font-bold"><td className={`border border-black ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>{RUNTIME_EXAMS[idx]?.name || `第${idx + 1}次`}</td><td className={`border border-black bg-blue-50 font-extrabold ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>{s.total || '-'}</td><td className={`border border-black ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>{s.rank || '-'}</td><td className={`border border-black ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>{s.gradeRank || '-'}</td><td className={`border border-black text-purple-900 ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>{cutoffs[idx]?.special ?? '-'}</td><td className={`border border-black text-blue-900 ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>{cutoffs[idx]?.bachelor ?? '-'}</td>{SUBJECTS.map(sub => <td key={sub} className={`border border-black ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>{s.subjects[sub] || '-'}</td>)}</tr>)}</tbody></table></div>
+                    <div className={`${isCompactPrint ? 'mb-1 p-1.5' : 'mb-2 p-2'} border border-black rounded-sm bg-gray-50`}><h3 className="font-extrabold border-l-4 border-black pl-2 mb-1 text-base">一、学生基本信息</h3><div className="flex justify-between items-end px-2"><div><span className="text-gray-600 text-xs font-bold">姓名</span><p className={`${isCompactPrint ? 'text-base' : 'text-lg'} font-extrabold`}>{student.name}</p></div><div><span className="text-gray-600 text-xs font-bold">学号</span><p className="text-base font-bold font-mono">{student.id}</p></div><div><span className="text-gray-600 text-xs font-bold">最新总分</span><p className={`${isCompactPrint ? 'text-base' : 'text-lg'} font-extrabold text-blue-800`}>{latestValidScore?.total ?? '-'}</p></div><div><span className="text-gray-600 text-xs font-bold">班排</span><p className={`${isCompactPrint ? 'text-base' : 'text-lg'} font-extrabold`}>{latestValidScore?.rank ?? '-'}</p></div><div><span className="text-gray-600 text-xs font-bold">年级排名</span><p className={`${isCompactPrint ? 'text-base' : 'text-lg'} font-extrabold`}>{latestValidScore?.gradeRank ?? '-'}</p></div></div></div>
+                    <div className={`${isCompactPrint ? 'mb-1' : 'mb-2'}`}><h3 className="font-extrabold border-l-4 border-black pl-2 mb-1 text-base">二、联考成绩全景表</h3><table className={`w-full text-center border-collapse border border-black ${isCompactPrint ? 'text-[10px]' : 'text-xs'}`}><thead className="bg-gray-200 font-extrabold text-black"><tr><th className={`border border-black ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>考试名称</th><th className={`border border-black bg-blue-100 ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>总分</th><th className={`border border-black ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>班排</th><th className={`border border-black ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>校排</th><th className={`border border-black text-purple-900 ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>特控线</th><th className={`border border-black text-blue-900 ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>本科线</th>{SUBJECTS.map(s => <th key={s} className={`border border-black ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>{s}</th>)}</tr></thead><tbody>{validExamEntries.map(({ score: s, idx }) => <tr key={idx} className="font-bold"><td className={`border border-black ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>{RUNTIME_EXAMS[idx]?.name || `第${idx + 1}次`}</td><td className={`border border-black bg-blue-50 font-extrabold ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>{s.total}</td><td className={`border border-black ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>{s.rank || '-'}</td><td className={`border border-black ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>{s.gradeRank || '-'}</td><td className={`border border-black text-purple-900 ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>{cutoffs[idx]?.special ?? '-'}</td><td className={`border border-black text-blue-900 ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>{cutoffs[idx]?.bachelor ?? '-'}</td>{SUBJECTS.map(sub => <td key={sub} className={`border border-black ${isCompactPrint ? 'p-0.5' : 'p-1'}`}>{s.subjects[sub] || '-'}</td>)}</tr>)}</tbody></table></div>
                     {/* Chart (FIXED PIXEL SIZE FOR PRINT SAFETY) */}
                     <div className={`${isCompactPrint ? 'mb-1 p-1.5' : 'mb-2 p-2'} border border-gray-400`}><div style={{height: `${chartHeight}px`, overflow: "hidden"}}><LineChart width={chartWidth} height={chartHeight} data={chartData} margin={{ top: isCompactPrint ? 22 : 28, right: 20, bottom: isCompactPrint ? 26 : 18, left: 24 }}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="name" fontSize={isCompactPrint ? 8 : 10} interval={0} tick={{fontWeight:'bold'}} angle={isCompactPrint ? -20 : 0} textAnchor={isCompactPrint ? 'end' : 'middle'} height={isCompactPrint ? 36 : 24} /><YAxis domain={chartYDomain} fontSize={9} tick={{fontWeight:'bold'}} width={26}/><Line type="monotone" dataKey="total" stroke="#000" strokeWidth={2} dot={(props) => { const { cx, cy, payload } = props; return <circle cx={cx} cy={cy} r={2.8} fill={payload.dropTag ? "#dc2626" : "#000"} stroke="none" />; }} isAnimationActive={false}><LabelList dataKey="total" position="top" style={{fontSize: isCompactPrint ? '8px' : '10px', fontWeight:'bold'}}/><LabelList dataKey="passTag" position="insideTopRight" style={{fontSize: isCompactPrint ? '7px' : '8px', fontWeight:'bold', fill:'#1d4ed8'}}/><LabelList dataKey="dropTag" position="bottom" style={{fontSize: isCompactPrint ? '7px' : '8px', fontWeight:'bold', fill:'#dc2626'}}/></Line></LineChart></div></div>
                     <div className={`flex-1 border border-black rounded-sm ${isCompactPrint ? 'p-2' : 'p-3'}`}>
@@ -744,15 +749,19 @@
         // --- 前端学情报告（模块化布局，不包含五、六）---
         const StudentReportScreen = ({ student, cutoffs, allStudents, onBack }) => {
             const analysis = useMemo(() => generateDetailedAnalysis(student, cutoffs, allStudents), [student, cutoffs, allStudents]);
-            const chartData = student.scores.map((s, i) => {
-                const prevTotal = i > 0 ? (student.scores[i - 1]?.total || 0) : null;
+            const validExamEntries = student.scores
+                .map((s, idx) => ({ score: s, idx }))
+                .filter(x => (x.score?.total || 0) > 0);
+            const latestValidScore = validExamEntries.length ? validExamEntries[validExamEntries.length - 1].score : null;
+            const chartData = validExamEntries.map(({ score: s, idx }, pos) => {
+                const prevTotal = pos > 0 ? (validExamEntries[pos - 1].score.total || 0) : null;
                 const drop = prevTotal != null ? s.total - prevTotal : 0;
-                const examCutoff = cutoffs[i] || { special: 0, bachelor: 0 };
+                const examCutoff = cutoffs[idx] || { special: 0, bachelor: 0 };
                 const passTag = s.total >= examCutoff.special
                     ? `特控线${examCutoff.special}`
                     : (s.total >= examCutoff.bachelor ? `本科线${examCutoff.bachelor}` : "");
                 return {
-                    name: (RUNTIME_EXAMS[i] && RUNTIME_EXAMS[i].name) ? RUNTIME_EXAMS[i].name.replace(/[①-⑥]/g, '').replace('联考','') : `第${i + 1}次`,
+                    name: (RUNTIME_EXAMS[idx] && RUNTIME_EXAMS[idx].name) ? RUNTIME_EXAMS[idx].name.replace(/[①-⑥]/g, '').replace('联考','') : `第${idx + 1}次`,
                     total: s.total,
                     passTag,
                     dropTag: drop <= -40 ? `${drop.toFixed(1)}分` : ""
@@ -768,9 +777,9 @@
             const basicItems = [
                 { label: '姓名', value: student.name },
                 { label: '学号', value: student.id },
-                { label: '最新总分', value: student.scores[getLastExamIndex()]?.total ?? '-', highlight: true },
-                { label: '班排', value: student.scores[getLastExamIndex()]?.rank ?? '-' },
-                { label: '年级排名', value: student.scores[getLastExamIndex()]?.gradeRank ?? '-' },
+                { label: '最新总分', value: latestValidScore?.total ?? '-', highlight: true },
+                { label: '班排', value: latestValidScore?.rank ?? '-' },
+                { label: '年级排名', value: latestValidScore?.gradeRank ?? '-' },
             ];
             return (
                 <div className="min-h-screen bg-slate-50">
@@ -811,7 +820,7 @@
                                 <table className="w-full text-sm text-center border-collapse">
                                     <thead><tr className="bg-slate-100 text-slate-700 font-bold"><th className="border border-slate-200 py-3 px-2">考试名称</th><th className="border border-slate-200 py-3 px-2 bg-blue-50">总分</th><th className="border border-slate-200 py-3 px-2">班排</th><th className="border border-slate-200 py-3 px-2">校排</th><th className="border border-slate-200 py-3 px-2 text-purple-700">特控线</th><th className="border border-slate-200 py-3 px-2 text-blue-700">本科线</th>{SUBJECTS.map(s => <th key={s} className="border border-slate-200 py-3 px-2">{s}</th>)}</tr></thead>
                                     <tbody>
-                                        {student.scores.map((s, idx) => <tr key={idx} className="font-medium text-slate-800"><td className="border border-slate-200 py-2 px-2">{RUNTIME_EXAMS[idx]?.name || `第${idx + 1}次`}</td><td className="border border-slate-200 py-2 px-2 bg-blue-50/50 font-bold">{s.total || '-'}</td><td className="border border-slate-200 py-2 px-2">{s.rank || '-'}</td><td className="border border-slate-200 py-2 px-2">{s.gradeRank || '-'}</td><td className="border border-slate-200 py-2 px-2 text-purple-600">{cutoffs[idx].special}</td><td className="border border-slate-200 py-2 px-2 text-blue-600">{cutoffs[idx].bachelor}</td>{SUBJECTS.map(sub => <td key={sub} className="border border-slate-200 py-2 px-2">{s.subjects[sub] ?? '-'}</td>)}</tr>)}
+                                        {validExamEntries.map(({ score: s, idx }) => <tr key={idx} className="font-medium text-slate-800"><td className="border border-slate-200 py-2 px-2">{RUNTIME_EXAMS[idx]?.name || `第${idx + 1}次`}</td><td className="border border-slate-200 py-2 px-2 bg-blue-50/50 font-bold">{s.total}</td><td className="border border-slate-200 py-2 px-2">{s.rank || '-'}</td><td className="border border-slate-200 py-2 px-2">{s.gradeRank || '-'}</td><td className="border border-slate-200 py-2 px-2 text-purple-600">{cutoffs[idx]?.special ?? '-'}</td><td className="border border-slate-200 py-2 px-2 text-blue-600">{cutoffs[idx]?.bachelor ?? '-'}</td>{SUBJECTS.map(sub => <td key={sub} className="border border-slate-200 py-2 px-2">{s.subjects[sub] ?? '-'}</td>)}</tr>)}
                                     </tbody>
                                 </table>
                             </div>
